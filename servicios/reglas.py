@@ -22,19 +22,19 @@ def analizar(exp: Expediente, config=Configuracion(), ingreso_escenario=None):
         tolerancia = numero(config.discrepancia, "Discrepancia", 0, 1)
         tope = numero(config.tea_maxima, "Tope TEA", 0, 10000)
         ingreso = numero(exp.ingreso, "Ingreso")
+        monto = numero(exp.monto, "Monto", D("0.01"))
         gastos = numero(exp.gastos, "Gastos")
         deudas = numero(exp.otras_cuotas, "Otras cuotas")
-        entero(exp.estabilidad_meses, "Estabilidad")
+        estabilidad = entero(exp.estabilidad_meses, "Estabilidad")
         numero(exp.tea, "TEA", 0, tope)
-        if exp.dias_mora is not None:
-            entero(exp.dias_mora, "Días de mora")
+        dias_mora = entero(exp.dias_mora, "Días de mora") if exp.dias_mora is not None else None
         if not isinstance(exp.fecha, date):
             raise ValueError("Fecha de evaluación requerida.")
         if exp.historial not in ("DESCONOCIDO", "INSUFICIENTE", "SIN_MORA_DECLARADA", "MORA_DECLARADA"):
             raise ValueError("Estado de historial inválido.")
-        if exp.historial == "SIN_MORA_DECLARADA" and exp.dias_mora != 0:
+        if exp.historial == "SIN_MORA_DECLARADA" and dias_mora != 0:
             raise ValueError("Sin mora declarada requiere cero días explícitos.")
-        if exp.historial == "MORA_DECLARADA" and (exp.dias_mora is None or exp.dias_mora <= 0):
+        if exp.historial == "MORA_DECLARADA" and (dias_mora is None or dias_mora <= 0):
             raise ValueError("Mora declarada requiere días positivos.")
         if exp.historial in ("DESCONOCIDO", "INSUFICIENTE") and exp.dias_mora is not None:
             raise ValueError("Historial desconocido o insuficiente: no inferir días de mora.")
@@ -103,10 +103,10 @@ def analizar(exp: Expediente, config=Configuracion(), ingreso_escenario=None):
     elif exp.historial == "INSUFICIENTE":
         alerta("RN-04", "historial", "Historial insuficiente: se requiere evidencia complementaria y revisión humana; no equivale a mora.")
     elif exp.historial == "MORA_DECLARADA":
-        alerta("RN-11", "dias_mora", f"Mora declarada: {exp.dias_mora} días; " + ("alerta crítica para revisión." if exp.dias_mora > 30 else "advertencia para revisión."), "relevante")
-    if exp.estabilidad_meses < 6:
+        alerta("RN-11", "dias_mora", f"Mora declarada: {dias_mora} días; " + ("alerta crítica para revisión." if dias_mora > 30 else "advertencia para revisión."), "relevante")
+    if estabilidad < 6:
         alerta("RN-10", "estabilidad_meses", "Continuidad menor a 6 meses: alerta didáctica.", "relevante")
-    elif exp.estabilidad_meses < 12:
+    elif estabilidad < 12:
         alerta("RN-10", "estabilidad_meses", "Continuidad de 6 a 11 meses: revisión adicional.")
     else:
         r.cifras["continuidad"] = "Favorable como señal auxiliar, no acredita capacidad."
@@ -141,7 +141,7 @@ def analizar(exp: Expediente, config=Configuracion(), ingreso_escenario=None):
             alerta("RN-03", "dti_total", f"DTI total {dti:.2%} > umbral didáctico {umbral:.2%}.", "relevante")
     if exp.cargos_completos:
         try:
-            r.tcea = tcea_fechada(exp.monto - inicial, [f["pago_total"] for f in tabla], exp.fechas_pago, exp.fecha_desembolso)
+            r.tcea = tcea_fechada(monto - inicial, [f["pago_total"] for f in tabla], exp.fechas_pago, exp.fecha_desembolso)
         except (ValueError, ArithmeticError) as error:
             alerta("RN-13", "TCEA", str(error))
     else:

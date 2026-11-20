@@ -41,24 +41,56 @@ class TestApp(unittest.TestCase):
 
     def test_simulacion_modificable_y_productos(self):
         app = self.iniciar()
-        datos = dict(ingreso=3500., gastos=1400., otras_cuotas=300., monto=10000.,
-                     meses=12, tea=25., estabilidad_meses=24, dias_mora=0)
-        for nombre, valor in datos.items():
-            app.number_input(key="sim_" + nombre).set_value(valor)
+        app.button(key="caso_Esperado").click().run()
         next(b for b in app.button if b.label == "Calcular simulación").click().run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.dataframe[-1].value), 12)
-        self.assertEqual(app.dataframe[-1].value.iloc[-1]["saldo_pendiente"], 0)
+        tabla = [d.value for d in app.dataframe if "saldo_final" in d.value.columns][-1]
+        self.assertEqual(len(tabla), 12)
+        self.assertEqual(tabla.iloc[-1]["saldo_final"], 0)
         app.number_input(key="sim_meses").set_value(24)
         app.number_input(key="sim_monto").set_value(5000.)
         app.number_input(key="sim_tea").set_value(0.)
         next(b for b in app.button if b.label == "Calcular simulación").click().run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.dataframe[-1].value), 24)
-        self.assertEqual(app.dataframe[-1].value["interes"].sum(), 0)
+        tabla = [d.value for d in app.dataframe if "saldo_final" in d.value.columns][-1]
+        self.assertEqual(len(tabla), 24)
+        self.assertEqual(tabla["interes"].sum(), 0)
         for producto in ("vehicular", "hipotecario", "empresarial"):
-            app.selectbox[0].select(producto).run()
+            app.selectbox(key="producto").select(producto).run()
             self.assertFalse(app.exception)
+            self.assertTrue(any("no evaluable" in x.value for x in app.warning))
+            self.assertFalse(app.metric)
+
+    def test_sesiones_aisladas_y_limpieza_evidencias(self):
+        app = self.iniciar()
+        app.button(key="caso_Esperado").click().run()
+        next(b for b in app.button if b.label == "Añadir transcripción manual explícita").click().run()
+        self.assertEqual(len(app.session_state["evidencias"]), 1)
+        otra = self.iniciar()
+        self.assertEqual(otra.session_state["evidencias"], [])
+        self.assertIsNone(otra.number_input(key="dato_ingreso").value)
+        next(b for b in app.button if b.label == "Iniciar evaluación nueva").click().run()
+        self.assertEqual(app.session_state["evidencias"], [])
+        self.assertFalse(app.exception)
+
+    def test_confirmacion_obligatoria(self):
+        app = self.iniciar()
+        next(b for b in app.button if b.label == "Añadir transcripción manual explícita").click().run()
+        next(b for b in app.button if b.label == "Confirmar transcripción").click().run()
+        self.assertTrue(app.error)
+        self.assertEqual(app.session_state["evidencias"][0].estado, "PENDIENTE")
+
+    def test_reporte_y_modificacion_base(self):
+        app = self.iniciar()
+        app.button(key="caso_Esperado").click().run()
+        app.number_input(key="sim_caida").set_value(20.)
+        next(b for b in app.button if b.label == "Calcular simulación").click().run()
+        self.assertEqual(app.number_input(key="dato_ingreso").value, 3500.)
+        next(b for b in app.button if b.label == "Generar reporte PDF").click().run(timeout=30)
+        self.assertFalse(app.exception)
+        app.number_input(key="dato_ingreso").set_value(0.).run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any(m.value == "N/D" for m in app.metric))
 
 
 if __name__ == "__main__":
