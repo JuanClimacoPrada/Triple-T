@@ -234,7 +234,8 @@ def mostrar_chat():
         if c.escenario:
             st.caption("Base intacta. Cambios del escenario: " + ", ".join(f"{k}={v}" for k,v in c.parametros_escenario.items()))
             st.dataframe([{"Contexto": nombre, "Monto": str(e.monto), "Meses": e.meses, "TEA": str(e.tea),
-                "Cuota base": str(r.cifras.get("cuota_base", "N/D")), "Saldo disponible": str(r.cifras.get("saldo_post_cuota", "N/D"))}
+                "Cuota base": f"{r.cifras['cuota_base']:,.2f}" if "cuota_base" in r.cifras else "N/D",
+                "Saldo disponible": f"{r.cifras['saldo_post_cuota']:,.2f}" if "saldo_post_cuota" in r.cifras else "N/D"}
                 for nombre, e, r in (("Base", c.expediente, c.resultado), ("Escenario", exp_activo, r_activo))], hide_index=True)
         mostrar_resultado(r_activo, base=c.resultado if c.escenario else None)
     if c.informe is not None and c.informe_revision == c.revision:
