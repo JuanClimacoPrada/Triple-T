@@ -40,4 +40,3 @@ def mostrar_estrategia():
     writer.writeheader()
     writer.writerows(display)
     st.download_button("Descargar los 9 escenarios (CSV)", salida.getvalue().encode("utf-8-sig"), file_name="escenarios_bcp_riskpredict.csv", mime="text/csv")
-

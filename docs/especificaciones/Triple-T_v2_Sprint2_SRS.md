@@ -1,10 +1,10 @@
 # Triple-T v2.0 — Sprint 2
 ## Especificación funcional, reglas de negocio, validaciones, excepciones y aceptación
 
-**Proyecto:** Triple-T — Sistema académico de apoyo a decisiones crediticias (caso PETI BCP, brecha B01)  
-**Versión de especificación:** 1.0 (20-11-2026)  
-**Repositorio de referencia:** https://github.com/JuanClimacoPrada/Triple-T  
-**Aplicación:** https://triple-t.streamlit.app/  
+**Proyecto:** Triple-T — Sistema académico de apoyo a decisiones crediticias (caso PETI BCP, brecha B01)
+**Versión de especificación:** 1.0 (20-11-2026)
+**Repositorio de referencia:** https://github.com/JuanClimacoPrada/Triple-T
+**Aplicación:** https://triple-t.streamlit.app/
 **Estado:** Requisitos para implementar. Ninguna condición representa una política oficial del BCP.
 
 ## 0. Propósito y principios

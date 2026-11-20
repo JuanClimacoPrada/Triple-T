@@ -14,5 +14,3 @@ CASOS = {
     "Esperado": dict(ingreso=3500, gastos=1400, otras_cuotas=300, monto=10000, meses=12, tea=25, estabilidad_meses=24, dias_mora=0),
     "Pesimista": dict(ingreso=0, gastos=0, otras_cuotas=0, monto=20000, meses=24, tea=25, estabilidad_meses=0, dias_mora=60),
 }
-
-
