@@ -1,4 +1,18 @@
-# RiskPredict — chatbot académico BCP (MVP)
+# Triple-T — asistente académico de análisis crediticio
+
+## Sprint 3 — conversación principal
+
+Introduce datos y consultas en español desde el chat: captura múltiple, preguntas
+por faltantes, cuota parcial, correcciones confirmadas, boletas, escenarios, gráficos
+y PDF. El panel experto y el análisis estratégico son secundarios; no es obligatorio
+recorrer pestañas. Es un intérprete **local de intenciones y reglas**, sin IA generativa.
+
+Ejemplo: «Cliente gana 3500 soles, solicita 10000 soles a 12 meses con TEA 25%»;
+después «¿cuál es la cuota?», «gastos 1400 y otras cuotas 300» o «¿y a 24 meses?».
+Solo personal PEN. Las decisiones corresponden al analista; solo datos ficticios.
+
+[Arquitectura, decisiones, aceptación y pendientes del Sprint 3](docs/SPRINT_3.md).
+Reutiliza el motor, documentos, simulaciones y PDF del Sprint 2 sin nuevas dependencias.
 
 ## Triple-T v2.0 — Sprint 2
 
