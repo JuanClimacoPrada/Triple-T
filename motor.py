@@ -3,6 +3,8 @@ No es un scoring real ni otorga/aprueba créditos.
 """
 from dataclasses import dataclass
 from math import isfinite, log1p, expm1
+from decimal import Decimal, ROUND_HALF_UP, localcontext
+from reglas_credito import PERFILES, ReglasCredito
 
 
 def validar_numero(nombre, valor, minimo=0, entero=False):
@@ -23,6 +25,7 @@ class Solicitud:
     tea: float
     estabilidad_meses: int
     dias_mora: int
+    tipo_credito: str = "personal"
 
 
 def cuota_francesa(monto: float, meses: int, tea: float) -> float:
@@ -41,7 +44,53 @@ def cuota_francesa(monto: float, meses: int, tea: float) -> float:
     return cuota
 
 
-def evaluar(s: Solicitud) -> dict:
+def tabla_amortizacion(monto: float, meses: int, tea: float) -> list[dict]:
+    """Cuotas vencidas; redondeo HALF_UP y última cuota ajustada al saldo."""
+    cuota_francesa(monto, meses, tea)
+    if meses > 1200:
+        raise ValueError("La tabla admite hasta 1200 meses (límite técnico, no política crediticia).")
+    with localcontext() as ctx:
+        ctx.prec = 40
+        centimo = Decimal("0.01")
+        saldo = Decimal(str(monto)).quantize(centimo, rounding=ROUND_HALF_UP)
+        if saldo <= 0 or saldo != Decimal(str(monto)):
+            raise ValueError("El monto debe ser positivo y expresarse con hasta dos decimales.")
+        tasa = (1 + Decimal(str(tea)) / 100) ** (Decimal(1) / 12) - 1
+        cuota = (saldo / int(meses) if tasa == 0 else
+                 saldo * tasa / (1 - (1 + tasa) ** -int(meses)))
+        cuota = cuota.quantize(centimo, rounding=ROUND_HALF_UP)
+        filas = []
+        for periodo in range(1, int(meses) + 1):
+            interes = (saldo * tasa).quantize(centimo, rounding=ROUND_HALF_UP)
+            capital = saldo if periodo == meses else min(saldo, max(Decimal(0), cuota - interes))
+            saldo -= capital
+            filas.append({"mes": periodo, "capital": float(capital),
+                          "interes": float(interes), "cuota": float(capital + interes),
+                          "saldo_pendiente": float(saldo)})
+        return filas
+
+
+def solicitud_desde_datos(datos: dict) -> Solicitud:
+    requeridos = ("ingreso", "gastos", "otras_cuotas", "monto", "meses", "tea", "estabilidad_meses", "dias_mora")
+    faltantes = [campo for campo in requeridos if datos.get(campo) is None or datos.get(campo) == ""]
+    if faltantes:
+        raise ValueError("Información incompleta: " + ", ".join(faltantes))
+    s = Solicitud(**{campo: datos[campo] for campo in requeridos}, tipo_credito=datos.get("tipo_credito", "personal"))
+    evaluar(s)
+    return s
+
+
+def evaluar(s: Solicitud, reglas: ReglasCredito | None = None) -> dict:
+    if s.tipo_credito not in PERFILES:
+        raise ValueError("Tipo de crédito desconocido.")
+    reglas = reglas or PERFILES[s.tipo_credito]
+    validar_numero("Límite cuota/ingreso", reglas.limite_cuota_ingreso)
+    validar_numero("Mora", reglas.dias_mora_alerta, entero=True)
+    validar_numero("Estabilidad", reglas.estabilidad_minima, entero=True)
+    if reglas.limite_deuda_total is not None:
+        validar_numero("Límite deuda total", reglas.limite_deuda_total)
+    if reglas.limite_cuota_ingreso > 1 or (reglas.limite_deuda_total is not None and reglas.limite_deuda_total > 1):
+        raise ValueError("Los límites de ratios deben estar entre 0 y 1.")
     for nombre in ("ingreso", "gastos", "otras_cuotas"):
         validar_numero(nombre, getattr(s, nombre))
     for nombre in ("estabilidad_meses", "dias_mora"):
@@ -56,16 +105,20 @@ def evaluar(s: Solicitud) -> dict:
     alertas = []
     if s.ingreso == 0:
         alertas.append("No hay ingresos declarados para respaldar el pago.")
-    if s.dias_mora > 30:
-        alertas.append("Morosidad superior a 30 días: requiere verificación documental.")
+    if s.dias_mora > reglas.dias_mora_alerta:
+        alertas.append(f"Morosidad superior a {reglas.dias_mora_alerta} días: requiere verificación documental.")
     if saldo_final < 0:
         alertas.append("El flujo mensual disponible no alcanza para pagar la cuota.")
-    if ratio_cuota is not None and ratio_cuota > 0.30:
-        alertas.append("La cuota supera el 30% del ingreso (umbral didáctico del equipo).")
-    if s.estabilidad_meses < 6:
-        alertas.append("Antigüedad de ingresos menor a 6 meses.")
+    if ratio_cuota is not None and ratio_cuota > reglas.limite_cuota_ingreso:
+        alertas.append(f"La cuota supera el {reglas.limite_cuota_ingreso:.0%} del ingreso (umbral didáctico del equipo).")
+    if s.estabilidad_meses < reglas.estabilidad_minima:
+        alertas.append(f"Antigüedad de ingresos menor a {reglas.estabilidad_minima} meses.")
+    if s.gastos + s.otras_cuotas > s.ingreso:
+        alertas.append("Gastos y deudas existentes superan el ingreso: verificar el flujo declarado.")
+    if reglas.limite_deuda_total is not None and ratio_total is not None and ratio_total > reglas.limite_deuda_total:
+        alertas.append("El servicio total de deuda supera el límite académico configurado.")
 
-    if s.ingreso == 0 or s.dias_mora > 30 or saldo_final < 0:
+    if s.ingreso == 0 or s.dias_mora > reglas.dias_mora_alerta or saldo_final < 0:
         clasificacion = "Alerta crítica: revisión humana prioritaria"
     elif alertas:
         clasificacion = "Revisión adicional necesaria"
@@ -73,6 +126,14 @@ def evaluar(s: Solicitud) -> dict:
         clasificacion = "Condiciones preliminares favorables"
 
     return {
+        "tipo_credito": s.tipo_credito,
+        "pendientes_producto": reglas.pendientes,
+        "recomendacion": "Revisión humana prioritaria" if "crítica" in clasificacion else "Revisar documentación y políticas del producto antes de decidir",
+        "capacidad_pago": max(0, dinero_disponible),
+        "capacidad_segun_reglas": max(0, min(dinero_disponible, s.ingreso * reglas.limite_cuota_ingreso,
+            s.ingreso * reglas.limite_deuda_total - s.otras_cuotas if reglas.limite_deuda_total is not None else float("inf"))),
+        "ratio_deuda_actual": s.otras_cuotas / s.ingreso if s.ingreso > 0 else None,
+        "cobertura_cuota": dinero_disponible / cuota,
         "cuota": cuota,
         "disponible_antes": dinero_disponible,
         "disponible_despues": saldo_final,
