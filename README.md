@@ -1,5 +1,29 @@
 # RiskPredict — chatbot académico BCP (MVP)
 
+## Triple-T v2.0 — Sprint 2
+
+Flujo de seis pasos: **Datos → Evidencias → Confirmar → Analizar → Simular → Reporte**.
+Crédito personal en PEN, DTI total configurable, ingresos de 3–6 meses confirmados,
+extracción local de PDF y OCR opcional con fallback manual, simulaciones independientes,
+cargos separados, TCEA referencial con flujos completos y reporte PDF trazable.
+Los otros productos quedan «próximamente» y el módulo estratégico 3×3 se conserva.
+
+Consulta el [manual y matriz de aceptación](docs/SPRINT_2.md) y
+las [limitaciones de seguridad, OCR, TCEA y despliegue](LIMITACIONES.md).
+Solo datos sintéticos/anónimos: confirmar transcripción no verifica autenticidad.
+
+```powershell
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -v
+python -m streamlit run app.py
+```
+
+Para Community Cloud, incluir **todo el repositorio** (módulos `dominio/`,
+`servicios/`, `casos.py`, `visualizaciones.py`, `ui_estrategia.py` y `.streamlit/config.toml`).
+No se necesitan secretos ni APIs de pago. Tesseract es opcional; sin él se ofrece
+transcripción manual. La verificación en el despliegue público queda pendiente
+de revisión/autorización; esta entrega no despliega ni fusiona.
+
 ## Sprint 1 — Triple-T
 
 Incluye perfiles configurables personal, vehicular, hipotecario y empresarial,
