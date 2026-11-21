@@ -37,7 +37,22 @@ se actualiza en `requirements.txt`. No se inyecta JavaScript ni se crean iframes
 Este ajuste tampoco se ha probado en ejecución: la validación automatizada y
 visual sigue pendiente de autorización del responsable.
 
-## Sentinel y Gemini
+## Panel por pestañas e indicadores
+
+El resumen incorpora capacidad de pago mensual (`capacidad_neta`) además de
+cuota, DTI y saldo. Es la disponibilidad antes del nuevo pago, limitada a cero;
+no es una aprobación ni se presenta como porcentaje. Indicadores muestra también
+`capacidad_umbral`, ingreso admisible, umbral académico, nuevo pago/ingreso,
+intereses y TCEA. Si el motor no puede calcularlos, permanecen pendientes.
+
+El panel se organiza en Resumen, Indicadores, Gráficos, Detalle, Simular e Informe
+e IA. Cada pestaña contiene un área de desplazamiento de 480 px para que las
+tablas y formularios no extiendan toda la página. Score y Sentinel quedan en
+Indicadores; los controles posteriores a la confirmación conservan su bloqueo.
+Las fórmulas del motor no cambian. Validación visual y automatizada pendiente de
+autorización; no se han ejecutado pruebas para este ajuste.
+
+## Configurar servicios externos
 
 `SENTINEL_URL` se configura en Secrets de Streamlit o como variable de entorno.
 Debe ser una URL HTTPS externa fija, sin credenciales, parámetros ni fragmentos.

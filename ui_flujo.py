@@ -262,43 +262,47 @@ def panel_ia(c):
         st.caption(f"Consultas remotas: {ia.llamadas}/20. Sin reintentos automáticos.")
 
 
-def resultados(c):
+def resultados(c, seccion):
     exp, r = actual(c)
     if r is None:
         return
-    pendientes = faltan(c)
-    if pendientes:
-        st.caption("Por completar: " + ", ".join(ETIQUETAS[k] for k in pendientes))
-        boton("Continuar con los datos pendientes", "CONTINUAR", key="continuar_resultados")
-    alertas = sorted(r.reglas, key=lambda a: {"discrepancia":0, "pendiente":1, "relevante":2}.get(a["nivel"], 3))
-    if alertas:
-        st.warning(ALERTAS.get(alertas[0]["regla"], "Revisa los datos y limitaciones antes de decidir."))
-        with st.expander("Ver todas las alertas"):
-            for a in alertas:
-                st.write(ALERTAS.get(a["regla"], a["mensaje"]))
-                if a["regla"] in ("RN-07", "VAL-05/07"):
-                    st.caption(a["mensaje"])
-    for mensaje in pendientes_documentales(c):
-        st.caption(mensaje)
-    with st.expander("Ver detalle y evidencias", expanded=c.vista == "DETALLE"):
-        mostrar_resultado(r, base=c.resultado if c.escenario else None)
-        st.caption("Solo boletas confirmadas con meses únicos alimentan el promedio. Otros respaldos no acreditan ingreso estable.")
-        boton("Revisar documentos de ingresos", "BOLETAS", key="documentos_resultados")
-    if "cuota_base" in r.cifras:
-        with st.expander("Comparar escenario", expanded=c.vista == "SIMULAR"):
-            simulador(c)
-        if c.escenario:
-            st.dataframe(comparacion(c.resultado, c.resultado_escenario), hide_index=True, use_container_width=True)
-    with st.expander("Cómo se calculó"):
-        st.write("Cuotas mensuales vencidas, sistema francés: TEM = (1 + TEA/100)^(1/12) − 1. A tasa cero, cuota = monto / meses. DTI = servicio mensual de deuda / ingreso admisible.")
-        st.caption(f"Reglas: {VERSION_REGLAS} · Fecha: {exp.fecha} · Fuente de cifras: motor Python. Redondeo solo en presentación a dos decimales; saldo interno de alta precisión.")
-        for supuesto in r.supuestos:
-            st.caption(supuesto)
-        st.dataframe(resumen(c), hide_index=True)
-    boton("Preparar informe PDF", "PDF")
-    if c.informe is not None and c.informe_revision == c.revision and not c.pendiente:
-        st.download_button("Descargar informe vigente", c.informe, "triple-t-informe.pdf", "application/pdf")
-    panel_ia(c)
+    if seccion == "Resumen":
+        pendientes = faltan(c)
+        if pendientes:
+            st.caption("Por completar: " + ", ".join(ETIQUETAS[k] for k in pendientes))
+            boton("Continuar con los datos pendientes", "CONTINUAR", key="continuar_resultados")
+        alertas = sorted(r.reglas, key=lambda a: {"discrepancia":0, "pendiente":1, "relevante":2}.get(a["nivel"], 3))
+        if alertas:
+            st.warning(ALERTAS.get(alertas[0]["regla"], "Revisa los datos y limitaciones antes de decidir."))
+            with st.expander("Ver todas las alertas"):
+                for a in alertas:
+                    st.write(ALERTAS.get(a["regla"], a["mensaje"]))
+                    if a["regla"] in ("RN-07", "VAL-05/07"):
+                        st.caption(a["mensaje"])
+        for mensaje in pendientes_documentales(c):
+            st.caption(mensaje)
+    elif seccion == "Detalle":
+        with st.expander("Ver detalle y evidencias", expanded=c.vista == "DETALLE"):
+            mostrar_resultado(r, base=c.resultado if c.escenario else None)
+            st.caption("Solo boletas confirmadas con meses únicos alimentan el promedio. Otros respaldos no acreditan ingreso estable.")
+            boton("Revisar documentos de ingresos", "BOLETAS", key="documentos_resultados")
+        with st.expander("Cómo se calculó"):
+            st.write("Cuotas mensuales vencidas, sistema francés: TEM = (1 + TEA/100)^(1/12) − 1. A tasa cero, cuota = monto / meses. DTI = servicio mensual de deuda / ingreso admisible.")
+            st.caption(f"Reglas: {VERSION_REGLAS} · Fecha: {exp.fecha} · Fuente de cifras: motor Python. Redondeo solo en presentación a dos decimales; saldo interno de alta precisión.")
+            for supuesto in r.supuestos:
+                st.caption(supuesto)
+            st.dataframe(resumen(c), hide_index=True)
+    elif seccion == "Simular":
+        if "cuota_base" in r.cifras:
+            with st.expander("Comparar escenario", expanded=c.vista == "SIMULAR"):
+                simulador(c)
+            if c.escenario:
+                st.dataframe(comparacion(c.resultado, c.resultado_escenario), hide_index=True, use_container_width=True)
+    elif seccion == "Informe e IA":
+        boton("Preparar informe PDF", "PDF")
+        if c.informe is not None and c.informe_revision == c.revision and not c.pendiente:
+            st.download_button("Descargar informe vigente", c.informe, "triple-t-informe.pdf", "application/pdf")
+        panel_ia(c)
 
 
 def mostrar(editor, reiniciar_ui, pedir_caso):
@@ -391,11 +395,19 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                                 st.warning(str(error))
         with dashboard:
             with st.container(key="tt_dashboard_panel", border=True):
-                render_dashboard_area(vm)
-                if c.flujo.etapa == "RESULTADOS" and not c.pendiente:
-                    resultados(c)
-                elif c.flujo.iniciado:
-                    st.caption("El panel se actualiza con el motor. Los datos todavía requieren confirmación antes del informe y la asistencia IA.")
+                section_title("Resumen del análisis")
+                nombres = ["Resumen", "Indicadores", "Gráficos", "Detalle", "Simular", "Informe e IA"]
+                inicial = {"SIMULAR": "Simular", "DETALLE": "Detalle", "PDF": "Informe e IA"}.get(c.vista, "Resumen")
+                for nombre, pestana in zip(nombres, st.tabs(nombres, default=inicial)):
+                    with pestana:
+                        # Acota también las tablas y formularios largos a su panel.
+                        with st.container(height=480, border=False, key="panel_" + nombre):
+                            if nombre in ("Resumen", "Indicadores", "Gráficos"):
+                                render_dashboard_area(vm, nombre)
+                            if c.flujo.etapa == "RESULTADOS" and not c.pendiente:
+                                resultados(c, nombre)
+                            elif nombre in ("Detalle", "Simular", "Informe e IA"):
+                                st.info("Confirma los datos de la evaluación para habilitar esta sección.")
     if c.vista == "ESTRATEGIA":
         st.caption("Comparación tecnológica independiente de esta evaluación crediticia")
         mostrar_estrategia()

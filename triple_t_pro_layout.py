@@ -42,6 +42,7 @@ class TripleTViewModel:
     preliminary: bool = True
     current_step: int = 1
     metrics: list = field(default_factory=list)
+    indicators: list = field(default_factory=list)
     comparison_rows: list = field(default_factory=list)
     chart_bars: list = field(default_factory=list)
     income_breakdown: list = field(default_factory=list)
@@ -103,6 +104,20 @@ def construir_vm(c, sentinel_url=None):
     vm.metrics = [MetricCard("Cuota mensual estimada", dinero(pago), "Incluye cargos declarados" if "pago_mensual_total" in cifra else "Teórica, sin cargos", "green", "wallet"),
         MetricCard("Endeudamiento total", "Pendiente" if dti is None else f"{dti:.1%}", "Cuotas / ingreso admisible", "blue", "chart"),
         MetricCard("Saldo disponible mensual", dinero(cifra.get("saldo_post_cuota")), "Después de gastos y cuotas", "cyan", "layers")]
+    vm.metrics.insert(1, MetricCard("Capacidad de pago mensual", dinero(cifra.get("capacidad_neta")), "Ingreso menos gastos y otras cuotas; mínimo cero", "cyan", "wallet"))
+    ingreso = cifra.get("ingresos_admisibles")
+    carga = pago / ingreso if pago is not None and ingreso is not None and ingreso > 0 else None
+    vm.indicators = [
+        ("Ingreso admisible", dinero(ingreso)),
+        ("Capacidad neta para el nuevo pago", dinero(cifra.get("capacidad_neta"))),
+        ("Capacidad con umbral académico", dinero(cifra.get("capacidad_umbral"))),
+        ("Umbral DTI configurado", f"{c.config.umbral_dti:.1%}"),
+        ("Nuevo pago / ingreso", "Pendiente" if carga is None else f"{carga:.1%}"),
+        ("Endeudamiento total (DTI)", "Pendiente" if dti is None else f"{dti:.1%}"),
+        ("Saldo después del nuevo pago", dinero(cifra.get("saldo_post_cuota"))),
+        ("Intereses totales", dinero(cifra.get("intereses"))),
+        ("TCEA referencial", "Pendiente" if r.tcea is None else f"{r.tcea:.2%}"),
+    ]
     vm.documents_note = "; ".join(pendientes_documentales(c)) or "Transcripciones confirmadas · autenticidad no verificada"
     vm.state_label = estado_revision(c, r)
     vm.next_fields = faltan(c) if c.flujo else []
@@ -206,27 +221,25 @@ def section_title(label, name="file"):
     st.markdown('<div class="tt-mini-title">'+icon(name)+escape(label)+'</div>', unsafe_allow_html=True)
 
 
-def render_dashboard_area(vm):
-    section_title("Resumen del análisis")
+def render_dashboard_area(vm, seccion="Resumen"):
     st.caption("Vista preliminar · confirma los datos antes de emitir el análisis" if vm.preliminary else "Resultados del motor · para revisión humana")
+    if seccion == "Indicadores":
+        section_title("Indicadores clave", "chart")
+        st.dataframe([{"Indicador": k, "Valor": v} for k, v in vm.indicators], hide_index=True, use_container_width=True)
+        st.caption("Capacidad neta = máximo entre cero e ingreso admisible menos gastos y otras cuotas. Capacidad con umbral = mínimo de esa disponibilidad y el margen del umbral DTI, limitado a cero. Son referencias académicas, no límites aprobados por una entidad.")
+        st.markdown(score_html(vm.sentinel_url), unsafe_allow_html=True)
+        return
+    if seccion == "Gráficos":
+        section_title("Cuota por plazo", "chart")
+        st.markdown(bars_html(vm.chart_bars), unsafe_allow_html=True)
+        st.caption("Mismo monto y TEA. Cuotas base teóricas sin cargos; no son ofertas.")
+        section_title("Uso del ingreso", "wallet")
+        st.markdown(donut_html(vm), unsafe_allow_html=True)
+        return
     st.markdown(cards_html(vm.metrics), unsafe_allow_html=True)
     st.markdown('<div class="tt-review"><span>Estado de la evaluación</span><strong>'+escape(vm.state_label)+'</strong></div>', unsafe_allow_html=True)
-    left,right = st.columns([1.2,1],gap="small")
-    with left:
-        with st.container(border=True):
-            section_title("Comparación de condiciones", "scale")
-            st.markdown(comparison_html(vm.comparison_rows), unsafe_allow_html=True)
-        with st.container(border=True):
-            section_title("Cuota por plazo", "chart")
-            st.markdown(bars_html(vm.chart_bars), unsafe_allow_html=True)
-            st.caption("Mismo monto y TEA. Cuotas base teóricas sin cargos; no son ofertas.")
-    with right:
-        with st.container(border=True):
-            section_title("Indicadores clave", "chart")
-            st.markdown(score_html(vm.sentinel_url), unsafe_allow_html=True)
-        with st.container(border=True):
-            section_title("Uso del ingreso", "wallet")
-            st.markdown(donut_html(vm), unsafe_allow_html=True)
+    section_title("Comparación de condiciones", "scale")
+    st.markdown(comparison_html(vm.comparison_rows), unsafe_allow_html=True)
     with st.expander("Documentación pendiente", expanded=False):
         st.write(vm.documents_note)
         st.caption("Presentar o transcribir no verifica autenticidad ni titularidad.")
