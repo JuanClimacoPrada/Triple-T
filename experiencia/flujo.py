@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 import re
 from conversacion.intenciones import interpretar, normalizar
-from experiencia.preguntas import PREGUNTAS, ETIQUETAS, legible
+from experiencia.preguntas import PREGUNTAS, ETIQUETAS, legible, RAZONES
 from ia.privacidad import mensaje_admisible
 
 
@@ -120,6 +120,9 @@ def recibir_guiado(c, texto):
     if t in ("hola", "buenas", "buenos dias", "buenas tardes", "buenas noches"):
         decir(c, "Hola, soy Triple-T. Puedo guiarte en una evaluación crediticia. ¿Iniciamos una solicitud o prefieres simular condiciones?")
         return
+    if re.search(r"por que (?:necesitas|solicitas|pides|preguntas)(?: ese dato| esto)?", t):
+        decir(c, RAZONES.get(c.campo_preguntado, "Los respaldos ayudan a documentar el análisis; su transcripción requiere revisión y no verifica autenticidad.") + " Si no lo sabes, puedes agregarlo después. " + siguiente(c))
+        return
     if re.search(r"(?:por que|porque).*descont|doble conteo", t):
         decir(c, "Si las cuotas ya se restaron del ingreso neto, el motor reconstruye el ingreso antes de deuda para no descontarlas dos veces. ¿Todas están descontadas o ninguna?")
         return
@@ -129,13 +132,13 @@ def recibir_guiado(c, texto):
     if re.search(r"\b(?:aprueb\w*|aprobar\w*|rechaz\w*)\b", t):
         decir(c, "La decisión corresponde al analista. Puedo mostrar indicadores y pendientes, pero no aprobar ni rechazar. " + siguiente(c))
         return
-    if re.search(r"\b(?:iniciar evaluacion|quiero evaluar un cliente|empezar|iniciar solicitud)\b", t):
+    if re.search(r"\b(?:iniciar evaluacion|quiero evaluar (?:un cliente|una solicitud(?: de credito)?)|empezar|iniciar solicitud)\b", t):
         iniciar(c)
         return
     if t == "simular un prestamo":
         iniciar(c, True)
         return
-    if t in ("no se", "no tengo", "no dispongo", "no por ahora", "agregar despues", "agregar mas tarde", "pendiente", "solicitar al cliente") or "no conozco la tea" in t:
+    if t in ("no se", "no lo se", "no tengo", "no dispongo", "no por ahora", "agregar despues", "agregar mas tarde", "pendiente", "solicitar al cliente") or "no conozco la tea" in t:
         diferir(c, "SOLICITAR" if "solicitar" in t else "PENDIENTE")
         return
     if c.campo_preguntado == "descuento_planilla" and t in ("si", "no"):
