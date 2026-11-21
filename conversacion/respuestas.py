@@ -4,7 +4,7 @@ ETIQUETAS = {"monto": "monto solicitado", "meses": "plazo en meses", "tea": "TEA
     "ingreso": "ingreso neto estable", "gastos": "gastos sin deuda", "otras_cuotas": "otras cuotas mensuales",
     "estabilidad_meses": "continuidad de ingresos en meses", "historial": "estado del historial crediticio",
     "descuento_planilla": "si TODAS las otras cuotas ya están descontadas del ingreso neto"}
-AYUDA = "Soy un chatbot local de intenciones y reglas, sin IA generativa. Ejemplos: «Cliente gana 3500 soles, solicita 10000 soles a 12 meses con TEA 25%»; «gastos 1400 y otras cuotas 300»; «no están descontadas»; «¿cuál es la cuota?»; «¿y a 24 meses?»; «subir boletas»; «qué falta»; «genera PDF»; «compara A, B y C»."
+AYUDA = "Uso reglas locales y, con activación y consentimiento, Gemini opcional para interpretar consultas; los cálculos siguen en Python. Ejemplos: «Cliente gana 3500 soles, solicita 10000 soles a 12 meses con TEA 25%»; «gastos 1400 y otras cuotas 300»; «no están descontadas»; «¿cuál es la cuota?»; «¿y a 24 meses?»; «subir boletas»; «qué falta»; «genera PDF»; «compara A, B y C»."
 
 
 def faltantes(exp):
