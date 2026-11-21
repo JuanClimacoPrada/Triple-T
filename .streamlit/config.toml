@@ -4,3 +4,11 @@ enableStaticServing = false
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#1068e8"
+backgroundColor = "#eef4fa"
+secondaryBackgroundColor = "#e8f1fa"
+textColor = "#152c50"
+font = "sans serif"

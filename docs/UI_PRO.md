@@ -1,0 +1,58 @@
+# Interfaz profesional integrada
+
+La interfaz adapta los archivos visuales entregados (`triple_t_pro_layout.py` y
+`triple_t_pro_styles.css`) al flujo y expediente existentes. Usa el flyer como
+referencia de colores, navegación lateral, conversación central y panel derecho.
+Los importes, score, riesgo y porcentajes ilustrativos del paquete no se utilizan.
+
+## Funcionamiento
+
+- Navegación: análisis, simulador, expediente, historial de sesión y ayuda.
+- Conversación con burbujas, etapas y controles contextuales. Admite «No lo sé»,
+  «Agregar después» y «¿Por qué necesitas ese dato?», sin consultar a Gemini.
+- Panel progresivo calculado por el motor: cuota, DTI y saldo disponible. La
+  vista preliminar no confirma datos, crea informes ni habilita la asistencia IA.
+- Comparación del expediente base y escenario vigente; barras calculadas para
+  el plazo elegido y hasta dos plazos adicionales, con el mismo monto y TEA.
+  Son cuotas base teóricas, sin cargos, no ofertas de entidades financieras.
+- Gráfico de uso del ingreso basado en gastos, otras cuotas, nuevo pago y saldo
+  calculados. No inventa una composición de ingresos por fuente. Cuando falta
+  capacidad calculable o existe déficit, muestra una explicación en su lugar.
+- Documentos, confirmación de transcripciones, simulaciones, detalles,
+  amortización, PDF y análisis estratégico mantienen sus módulos existentes.
+- HTML dinámico escapado, iconos SVG locales, sin fuentes externas ni nuevas
+  dependencias. Tema claro y distribución adaptable mediante CSS.
+
+## Sentinel y Gemini
+
+`SENTINEL_URL` se configura en Secrets de Streamlit o como variable de entorno.
+Debe ser una URL HTTPS externa fija, sin credenciales, parámetros ni fragmentos.
+La variable de entorno tiene prioridad. Si falta o no es válida, la tarjeta
+mantiene visible «Consultar Sentinel» deshabilitado.
+
+El enlace abre otra pestaña con `noopener noreferrer` y `no-referrer`; no añade
+datos del expediente. La tarjeta muestra «No disponible»: no hay API de Sentinel
+ni fuente autorizada de score integrada. El responsable debe configurar el
+destino adecuado para su acceso al servicio.
+
+Gemini conserva el consentimiento explícito y la restricción a explicaciones
+sobre resultados confirmados. El nuevo panel no realiza consultas remotas.
+Los documentos siguen procesándose en el servidor; nunca se envían a Gemini.
+La captura guiada y los cálculos continúan independientes de su disponibilidad.
+
+## Estado de validación de esta entrega
+
+Por instrucción del responsable, se prepara primero el PR para su merge manual.
+**No se ejecutaron pruebas automatizadas, arranque de la aplicación ni revisión
+visual de escritorio o móvil en esta entrega.** Tampoco se generaron capturas.
+Las pruebas existentes permanecen sin cambios; las de UI de versiones anteriores
+requieren adaptación al flujo guiado antes de poder dar una validación vigente.
+
+Después de que el responsable comunique el merge se solicitará autorización para
+adaptar y ejecutar las pruebas, revisar ambos tamaños de pantalla y obtener las
+capturas. Quedan pendientes la fidelidad visual observada, el ajuste de selectores
+CSS a la versión instalada de Streamlit y la regresión funcional completa.
+
+La interfaz implementada no constituye una validación bancaria, una aprobación o
+rechazo de crédito, ni una verificación de autenticidad documental. Se mantienen
+las restricciones de la instancia de demostración respecto a datos reales.

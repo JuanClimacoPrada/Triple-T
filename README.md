@@ -1,5 +1,14 @@
 # Triple-T — asistente académico de análisis crediticio
 
+## Diseño profesional integrado
+
+Navegación lateral, chat guiado y panel financiero progresivo inspirado en el flyer.
+Los indicadores y gráficos utilizan el motor existente. La tarjeta «Score crediticio»
+muestra «No disponible» y permite configurar un enlace externo mediante
+`SENTINEL_URL`, sin transmitir el expediente. Consulta [integración y pendientes](docs/UI_PRO.md).
+Las pruebas y las capturas de esta entrega quedan pendientes por instrucción del
+responsable: primero revisará y fusionará el PR, después decidirá si autoriza las pruebas.
+
 ## Sprint 5 — evaluación guiada, documentos y resumen visual
 
 Inicia una evaluación o una simulación y responde una pregunta por vez. Puedes

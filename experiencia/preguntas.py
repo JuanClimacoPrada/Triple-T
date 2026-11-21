@@ -23,3 +23,17 @@ VALORES = {"DESCONOCIDO": "Desconocido", "INSUFICIENTE": "Sin historial suficien
 
 def legible(valor):
     return "Pendiente" if valor is None else VALORES.get(str(valor), str(valor))
+
+
+RAZONES = {
+    "monto": "El monto indica cuánto se financiará y permite calcular la cuota.",
+    "meses": "El plazo determina cuántos pagos habrá y cómo se distribuyen capital e intereses.",
+    "tea": "La TEA permite obtener la tasa mensual del cálculo. No puedo sustituirla por una tasa inventada.",
+    "ingreso": "El ingreso estable permite comparar las cuotas con los recursos disponibles.",
+    "gastos": "Los gastos habituales se restan para estimar cuánto quedaría después del pago.",
+    "otras_cuotas": "Los préstamos actuales también consumen ingreso y forman parte del endeudamiento total.",
+    "descuento_planilla": "Necesito evitar restar dos veces una cuota que ya fue descontada del ingreso neto.",
+    "estabilidad_meses": "La continuidad aporta una señal académica para revisión; no acredita capacidad por sí sola.",
+    "historial": "Permite señalar antecedentes declarados y necesidades de respaldo, sin consultar centrales de riesgo.",
+    "dias_mora": "Los días declarados permiten señalar la alerta correspondiente sin inferir un atraso desconocido.",
+}
