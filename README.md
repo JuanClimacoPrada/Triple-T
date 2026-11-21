@@ -1,10 +1,35 @@
 # Triple-T — asistente académico de análisis crediticio
 
-## Sprint 4 — IA opcional, cálculos locales
+## Sprint 5 — evaluación guiada, documentos y resumen visual
 
-Gemini interpreta paráfrasis en español mediante JSON validado localmente. Los
-cálculos, explicaciones, confirmaciones, escenarios y PDF siguen en Python.
-Sin configuración o consentimiento, el chat funciona en modo local.
+Inicia una evaluación o una simulación y responde una pregunta por vez. Puedes
+registrar varios datos juntos, dejar lo desconocido pendiente, presentar respaldos,
+revisar fuentes y confirmar antes de calcular. Las tarjetas muestran cuota, DTI,
+disponible y estado de revisión. Escenarios, gráficos, cronograma y PDF reutilizan
+el motor Python. Solo crédito personal en PEN.
+
+**Toda la captura y el procesamiento documental funcionan sin Gemini.** La IA se
+ofrece únicamente después de confirmar datos y obtener resultados, mediante
+«Preguntar a la IA sobre este análisis». Solo selecciona explicaciones desde hechos
+calculados; no edita expedientes, valida documentos ni decide créditos.
+
+Los archivos se procesan en el **servidor** de Triple-T. En Community Cloud no es
+el equipo del usuario. Solo se permiten documentos de demostración sin identificadores.
+Otros respaldos y patrimonio se registran para revisión, sin convertir importes en
+ingreso ni garantías. La confirmación es de transcripción, nunca de autenticidad.
+
+`APP_ENV="demo"` es la única modalidad habilitada; configurar otro entorno bloquea
+la aplicación. `GEMINI_ENABLED=false` deshabilita las consultas remotas. No se agregan
+dependencias ni servicios de pago. [Arquitectura, matriz y guía manual del Sprint 5](docs/SPRINT_5.md).
+
+Por indicación del usuario, esta entrega no ejecuta pruebas ni llamadas reales a
+Gemini: la validación, capturas y regresión quedan pendientes de su revisión.
+
+## Configuración opcional de Gemini
+
+Gemini selecciona hechos del análisis mediante JSON validado localmente. La respuesta
+se ensambla con plantillas de Python. Sin configuración o consentimiento se ofrecen
+explicaciones locales. El enrutamiento de captura del Sprint 4 queda sustituido.
 
 1. Instala `requirements.txt` y ejecuta Streamlit como se indica abajo.
 2. El responsable verifica el nivel gratuito de su cuenta en
@@ -15,8 +40,9 @@ Sin configuración o consentimiento, el chat funciona en modo local.
    Define `GEMINI_API_KEY`, `GEMINI_MODEL` y `GEMINI_FREE_TIER_CONFIRMED = true`
    únicamente tras verificar acceso gratuito. También se admiten variables de entorno.
    No compartas la clave en chat, GitHub, capturas ni informes.
-4. Abre «Modo local» junto al título y activa «Activar Gemini con ese consentimiento»
-   tras leer el aviso de consultas ficticias. El mismo interruptor vuelve al modo local.
+4. Tras confirmar los datos y obtener resultados, abre «Preguntar a la IA sobre este
+   análisis», lee el aviso, consiente y activa las preguntas. «Seguir sin IA» vuelve
+   al flujo local. Los cambios de datos invalidan esta activación.
    Configuración disponible no significa conexión probada: el panel indica si Gemini
    ya respondió en la sesión y muestra un motivo seguro cuando falla.
 
