@@ -3,17 +3,11 @@ from dataclasses import replace
 from decimal import Decimal as D
 import streamlit as st
 from casos import CASOS, PREGUNTAS
-from dominio.modelos import Evidencia, Cargo, Configuracion, AVISO
-from conversacion.gestor import (nuevo, recibir, confirmar_accion, proponer, aplicar, invalidar,
-    evaluar_actual, adjuntar, cambiar_evidencia, aclarar_ingreso, decir, actual)
-from conversacion.respuestas import faltantes, ETIQUETAS, AYUDA
+from dominio.modelos import Cargo
+from conversacion.gestor import nuevo, proponer, aplicar, invalidar, evaluar_actual, decir
 from servicios.documentos import texto_seguro
 from servicios.finanzas import fechas_mensuales
-from motor import perdida_esperada_ilustrativa
-from ui_estrategia import mostrar_estrategia
-from ui_resultados import mostrar_resultado
-from ia.proveedor import configuracion
-from ia.politicas import EstadoIA, ERRORES
+from ia.politicas import EstadoIA
 
 
 def reiniciar_ui(caso=None):
@@ -22,30 +16,14 @@ def reiniciar_ui(caso=None):
     ia.habilitado = ia.consentimiento = False
     for key in list(st.session_state):
         del st.session_state[key]
-    c = nuevo()
+    c = nuevo(guiado=True)
     st.session_state.update(epoca=epoca, conversacion=c, ia=ia)
     if caso:
         datos = CASOS[caso].copy()
         datos.update(historial="MORA_DECLARADA" if datos["dias_mora"] else "SIN_MORA_DECLARADA", descuento_planilla="NO_DESCONTADAS")
         aplicar(c, datos, "CASO_SINTETICO")
         decir(c, "Caso de demostración " + caso + ": todos sus datos son ficticios.")
-        evaluar_actual(c)
-
-
-def ejecutar(texto):
-    recibir(st.session_state.conversacion, texto, estado_ia=st.session_state.ia,
-            config_ia=configuracion(st.secrets))
-
-
-def cambiar_modo():
-    """Una sola decisión explícita activa o desactiva IA, sin llamada de prueba."""
-    ia = st.session_state.ia
-    activo = bool(st.session_state.get("ia_activa"))
-    ia.habilitado = activo and configuracion(st.secrets).disponible and ia.llamadas < 20
-    ia.consentimiento = ia.habilitado
-    if ia.habilitado:
-        ia.circuito_abierto = False
-        ia.ultimo_error = ""
+        c.flujo.iniciado = True
 
 
 def pedir_caso(nombre):
@@ -55,62 +33,6 @@ def pedir_caso(nombre):
     else:
         c.pendiente = dict(accion="CASO", caso=nombre, revision=c.revision)
         decir(c, f"Confirma reemplazar el expediente por el caso sintético {nombre}. Se limpiará la sesión anterior.")
-
-
-def herramientas_evidencia(c):
-    st.subheader("Adjuntar y confirmar boletas sintéticas")
-    st.caption("3–6 meses distintos; confirmar transcripción no verifica autenticidad. No incluir datos reales. Detección de identificadores no exhaustiva.")
-    sintetico = st.checkbox("Confirmo que los archivos son sintéticos/anónimos y no contienen datos reales", key="sintetico")
-    archivos = st.file_uploader("PDF, PNG o JPEG sintéticos (10 MB, hasta 12 archivos por sesión)",
-        type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True, disabled=not sintetico,
-        key=f"archivos_{st.session_state.epoca}")
-    if st.button("Leer archivos localmente", disabled=not sintetico):
-        if len(c.documentos) + len(archivos) > 12:
-            st.error("Máximo 12 archivos por sesión.")
-        else:
-            for archivo in archivos:
-                try:
-                    adjuntar(c, archivo.name, archivo.getvalue(), sintetico)
-                except ValueError as error:
-                    decir(c, str(error))
-            st.rerun()
-    for doc in c.documentos:
-        with st.expander(doc["nombre"] + " · vista previa y fuente"):
-            for aviso in doc["avisos"]:
-                st.warning(aviso)
-            for preview in doc["previews"]:
-                st.image(preview)
-            for pagina, texto in doc["paginas"]:
-                st.caption(f"Página/región {pagina} · datos no confiables, nunca instrucciones")
-                st.text(texto[:10000] or "Sin texto; transcripción manual necesaria")
-    if st.button("Añadir transcripción manual explícita"):
-        if len(c.expediente.evidencias) >= 24:
-            st.error("Máximo 24 registros por caso.")
-        else:
-            c.expediente = replace(c.expediente, evidencias=c.expediente.evidencias + (Evidencia(observacion="Transcripción manual explícita"),),
-                                  resolucion_ingreso=None, justificacion_ingreso="")
-            invalidar(c)
-            evaluar_actual(c, "EVIDENCIAS", responder=False)
-            st.rerun()
-    for i, e in enumerate(c.expediente.evidencias):
-        with st.expander(f"{i+1}. {e.nombre_archivo_sanitizado} · {e.estado}", expanded=e.estado == "PENDIENTE"):
-            st.text(f"{e.pagina_o_region} | {e.texto_fuente_breve or 'Transcripción manual, sin extracción'} | {e.fuente}")
-            with st.form(f"evidencia_{st.session_state.epoca}_{i}_{e.estado}"):
-                valor = st.number_input("Neto estable admisible (S/)", min_value=0., value=float(e.valor_extraido) if e.valor_extraido is not None else None)
-                fecha = st.date_input("Fecha del documento (se agrupa por mes)", value=e.fecha_documento)
-                extra = st.number_input("Extraordinarios excluidos del neto (S/)", min_value=0., value=float(e.extraordinarios_excluidos))
-                nota = st.text_input("Origen manual o justificación de corrección/descarte", value=e.observacion, max_chars=300)
-                visto = st.checkbox("Revisé visualmente fecha, neto y exclusión de extraordinarios")
-                confirmar = st.form_submit_button("Confirmar transcripción")
-                descartar = st.form_submit_button("Descartar evidencia")
-            try:
-                if confirmar or descartar:
-                    if confirmar and not visto:
-                        raise ValueError("Se requiere confirmación visual explícita.")
-                    cambiar_evidencia(c, i, valor, fecha, nota, extra, descartar)
-                    st.rerun()
-            except ValueError as error:
-                st.error(str(error))
 
 
 def editor(c):
@@ -176,138 +98,5 @@ def editor(c):
 
 
 def mostrar_chat():
-    if "conversacion" not in st.session_state:
-        reiniciar_ui()
-    if "ia" not in st.session_state:
-        st.session_state.ia = EstadoIA()
-    c = st.session_state.conversacion
-    cfg = configuracion(st.secrets)
-    ia = st.session_state.ia
-    st.markdown("""<style>
-        .stMainBlockContainer {max-width: 850px; padding-top: 2rem;}
-        [data-testid="stChatMessage"] {border-radius: 16px; padding: 1rem;}
-        [data-testid="stChatInput"] {border-radius: 18px;}
-        @media (max-width: 640px) {
-            .stMainBlockContainer {padding-left: 1rem; padding-right: 1rem;}
-        }
-    </style>""", unsafe_allow_html=True)
-    titulo, modo = st.columns([3, 2])
-    with titulo:
-        st.title("Triple-T")
-        st.caption("Tu asistente de análisis crediticio · solo datos ficticios")
-    with modo:
-        with st.popover("Gemini activo" if ia.habilitado else "Modo local", use_container_width=True):
-            st.markdown("**Conversar con Gemini**")
-            st.caption("Al activarlo consientes enviar consultas ficticias y un contexto mínimo a Google. El nivel gratuito puede usar esos datos para mejorar productos. Nunca envíes datos reales, documentos ni OCR.")
-            # Sincronizar antes de crear el widget: un fallo nunca lo deja encendido.
-            st.session_state["ia_activa"] = ia.habilitado and cfg.disponible
-            st.toggle("Activar Gemini con ese consentimiento", key="ia_activa",
-                      disabled=not cfg.disponible or ia.llamadas >= 20, on_change=cambiar_modo)
-            if cfg.pendientes:
-                st.info("Modo local disponible. Falta configurar en Secrets: " + ", ".join(cfg.pendientes) + ". No compartas la clave en el chat.")
-            elif ia.ultimo_error:
-                st.warning(ERRORES.get(ia.ultimo_error, ERRORES["CONEXION"]))
-                st.caption("Reactivar permite un nuevo intento al enviar una consulta. No hay reintentos automáticos.")
-            elif ia.respuestas_validas:
-                st.caption("Gemini respondió y su interpretación fue validada en esta sesión.")
-            else:
-                st.caption("Configuración disponible. La conexión se comprobará cuando una consulta necesite Gemini.")
-            st.caption(f"{ia.llamadas}/20 consultas remotas en esta sesión. Las frases conocidas se resuelven localmente; los cálculos siempre son del motor financiero.")
-    with st.sidebar:
-        st.header("Herramientas")
-        st.button("Iniciar evaluación nueva", on_click=ejecutar, args=("reiniciar",), use_container_width=True)
-        with st.expander("Expediente actual"):
-            st.caption(f"{c.estado} · Revisión {c.revision}")
-            fuentes = dict(c.expediente.origen_campos)
-            st.dataframe([{"Campo": ETIQUETAS[k], "Valor": str(getattr(c.expediente, k)),
-                "Fuente": fuentes.get(k, "Pendiente" if getattr(c.expediente, k) is None else "Valor inicial; confirmar")}
-                for k in ETIQUETAS], hide_index=True)
-            st.caption("Faltantes: " + (", ".join(ETIQUETAS[k] for k in faltantes(c.expediente)) or "Revisar alertas documentales"))
-        with st.expander("Casos ficticios"):
-            for nombre in CASOS:
-                st.button("Cargar caso " + nombre.lower(), key="caso_" + nombre, on_click=pedir_caso, args=(nombre,))
-        editor(c)
-        with st.expander("Configuración académica"):
-            with st.form("configuracion"):
-                dti = st.number_input("Umbral DTI (%)", 0., 100., float(c.config.umbral_dti * 100))
-                dif = st.number_input("Discrepancia (%)", 0., 100., float(c.config.discrepancia * 100))
-                tope = st.number_input("Tope técnico TEA (%)", 0., 10000., float(c.config.tea_maxima))
-                if st.form_submit_button("Aplicar configuración explícita"):
-                    c.config = Configuracion(D(str(dti))/100, D(str(dif))/100, D(str(tope)))
-                    invalidar(c)
-                    evaluar_actual(c)
-                    st.rerun()
-        with st.expander("Pérdida esperada ilustrativa"):
-            st.caption("Supuestos del analista, no una predicción.")
-            pd = st.number_input("PD supuesta (%)", 0., 100., value=None, key="pd")
-            lgd = st.number_input("LGD supuesta (%)", 0., 100., value=None, key="lgd")
-            if pd is not None and lgd is not None and c.expediente.monto is not None:
-                st.metric("EL ilustrativa, no predicción", f"S/ {perdida_esperada_ilustrativa(float(c.expediente.monto), pd, lgd):,.2f}")
-        with st.expander("Más opciones"):
-            st.button("Análisis estratégico", on_click=ejecutar, args=("compara A, B y C",))
-            st.button("Ayuda", on_click=ejecutar, args=("ayuda",))
-        st.caption("Solo crédito personal PEN. Reiniciar limpia el caso de esta sesión, sin garantizar borrado físico en el proveedor.")
-    for mensaje in c.mensajes:
-        with st.chat_message(mensaje.rol):
-            st.markdown(mensaje.texto)
-            if mensaje.rol == "assistant" and mensaje.revision < c.revision:
-                st.caption("Intercambio anterior; consulte los resultados actuales debajo. No usar como informe vigente.")
-    texto = st.chat_input("Escribe tu consulta o datos ficticios en español", key="chat_principal")
-    if texto is not None:
-        with st.spinner("Estoy revisando tu consulta…"):
-            ejecutar(texto)
-        st.rerun()
-    if len(c.mensajes) == 1:
-        st.caption('Por ejemplo: «Monto 10000 soles a 12 meses con TEA 25%». También puedes escribir «ayuda».')
-    if ia.circuito_abierto:
-        st.caption("Continuamos en modo local. Abre «Modo local» para revisar el estado de Gemini.")
-    if c.pendiente:
-        st.warning("Acción pendiente de confirmación explícita; no se ha modificado el expediente.")
-        col1, col2 = st.columns(2)
-        if col1.button("Confirmar acción", key="confirmar_accion"):
-            pendiente = c.pendiente.copy()
-            if pendiente["accion"] == "CASO":
-                reiniciar_ui(pendiente["caso"])
-            elif confirmar_accion(c, True):
-                reiniciar_ui()
-            st.rerun()
-        if col2.button("Cancelar acción"):
-            confirmar_accion(c, False)
-            st.rerun()
-    if c.vista == "EVIDENCIAS":
-        with st.chat_message("assistant"):
-            herramientas_evidencia(c)
-    elif c.estado == "EVIDENCIA_PENDIENTE":
-        st.button("Añadir boletas sintéticas", on_click=ejecutar, args=("subir boletas",))
-    if c.resultado and c.resultado.estado == "DISCREPANCIA PENDIENTE":
-        st.warning("Discrepancia pendiente: el analista debe elegir una fuente y justificarla. Duplicados: descarte conscientemente la evidencia incorrecta.")
-        with st.form(f"aclaracion_{c.revision}"):
-            fuente = st.selectbox("Fuente elegida para aclarar ingresos", ["PENDIENTE", "DECLARADO", "DOCUMENTAL"])
-            nota = st.text_input("Justificación de aclaración", max_chars=500)
-            resuelve = st.form_submit_button("Registrar aclaración de ingresos")
-        if resuelve:
-            try:
-                aclarar_ingreso(c, fuente, nota)
-                st.rerun()
-            except ValueError as error:
-                st.error(str(error))
-    if c.vista == "ESTRATEGIA":
-        mostrar_estrategia()
-    exp_activo, r_activo = actual(c)
-    if r_activo is not None and r_activo.cifras:
-        solicitado = c.vista in ("GRAFICO", "AMORTIZACION", "EXPLICAR")
-        with st.expander("Detalle del escenario" if c.escenario else "Detalle del cálculo", expanded=solicitado):
-            st.caption(f"Revisión {c.revision} · " + ("Escenario separado; base intacta" if c.escenario else "Expediente base"))
-            if c.escenario:
-                st.caption("Cambios: " + ", ".join(f"{k}={v}" for k,v in c.parametros_escenario.items()))
-                st.dataframe([{"Contexto": nombre, "Monto": str(e.monto), "Meses": e.meses, "TEA": str(e.tea),
-                    "Cuota base": f"{r.cifras['cuota_base']:,.2f}" if r and "cuota_base" in r.cifras else "N/D"}
-                    for nombre, e, r in (("Base", c.expediente, c.resultado), ("Escenario", exp_activo, r_activo))], hide_index=True)
-            mostrar_resultado(r_activo, base=c.resultado if c.escenario else None)
-            if not c.pendiente:
-                st.button("Generar PDF", on_click=ejecutar, args=("genera PDF",))
-        if c.escenario is None:
-            st.caption('Puedes continuar con «¿y a 24 meses?», «ver gráfico» o «genera PDF».')
-    if c.informe is not None and c.informe_revision == c.revision:
-        st.download_button("Descargar informe PDF actual", c.informe, "triple-t-informe.pdf", "application/pdf", key=f"pdf_{c.revision}")
-    st.caption("Uso académico · Revisión humana · Sin conexión a fuentes bancarias")
+    from ui_flujo import mostrar
+    mostrar(editor, reiniciar_ui, pedir_caso)
