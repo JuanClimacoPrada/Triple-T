@@ -40,3 +40,4 @@ class Conversacion:
     informe: bytes | None = None
     informe_revision: int | None = None
     campo_preguntado: str | None = None
+    flujo: object | None = None

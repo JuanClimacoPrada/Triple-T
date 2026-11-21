@@ -46,7 +46,7 @@ def generar_pdf(expediente, resultado, escenarios=(), config=None):
     fuentes = dict(expediente.origen_campos)
     filas = [["Campo", "Valor", "Fuente / estado"]]
     for campo, valor in asdict(expediente).items():
-        if campo in ("evidencias", "origen_campos", "cargos", "fechas_pago"):
+        if campo in ("evidencias", "respaldos", "origen_campos", "cargos", "fechas_pago"):
             continue
         filas.append([campo, formato(valor), fuentes.get(campo, "Ingresado / declarado; no verificado")])
     tabla(filas, [140, 190, 180])
@@ -62,6 +62,11 @@ def generar_pdf(expediente, resultado, escenarios=(), config=None):
         story.append(p(f"{e.campo}: {formato(e.valor_extraido)} | {e.fuente} / {e.estado} | Extraordinarios excluidos: {formato(e.extraordinarios_excluidos)}"))
         story.append(p(f"Observación: {e.observacion or 'Sin observación'}"))
     # No se exportan documentos crudos, previews ni texto extraído íntegro.
+    titulo("Otros respaldos y patrimonio declarado")
+    for e in expediente.respaldos:
+        story.append(p(f"{e.tipo} | {e.documento_presentado} | {e.fecha} | {e.estado}"))
+        story.append(p(f"Bien: {e.tipo_bien}; valor: {formato(e.valor)}; fuente: {e.fuente_valor}; relación: {e.relacion}. {e.verificacion}."))
+    story.append(p("Los respaldos generales y patrimoniales no se convierten en ingreso ni garantía. Si no hay boletas confirmadas, la evidencia de ingreso permanece pendiente. Ninguna transcripción verifica autenticidad."))
     titulo("Indicadores calculados")
     tabla([["Indicador", "Valor calculado"]] + [[k, f"{v:.2%}" if k in ("dti_total", "discrepancia_relativa") and v is not None else formato(v)] for k, v in resultado.cifras.items()], [260, 250])
     story.append(p(f"TCEA referencial: {resultado.tcea:.2%}" if resultado.tcea is not None else "TCEA no calculable con los datos disponibles."))

@@ -77,6 +77,18 @@ Referencias conceptuales y técnicas (no certificación regulatoria):
 [pypdf: PdfReader](https://pypdf.readthedocs.io/en/latest/modules/PdfReader.html).
 # IA opcional — Sprint 4
 
+**Actualización Sprint 5:** se sustituye la interpretación remota de captura por
+explicaciones opcionales posteriores al resultado confirmado. Solo se envían hechos
+permitidos y una pregunta filtrada. La salida selecciona IDs; el texto se construye
+con plantillas locales. No se ejecutaron pruebas de esta entrega por instrucción del
+usuario. La matriz y los recorridos pendientes están en `docs/SPRINT_5.md`.
+
+El procesamiento documental ocurre en el servidor de la aplicación (remoto en
+Streamlit Cloud), no en el dispositivo del usuario. Patrimonio y otros respaldos
+no cuentan como boletas ni alimentan ingresos o capacidad. No hay autenticación ni
+verificación externa de titularidad/autenticidad. `APP_ENV` distinto de `demo` se
+bloquea; el control no equivale a implementar un piloto privado.
+
 Gemini permanece desactivado sin configuración y consentimiento. Solo consultas
 ficticias: los filtros no garantizan anonimización. El nivel gratuito puede usar
 contenido para mejorar productos; el borrado local no elimina retención del proveedor.
