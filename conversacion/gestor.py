@@ -18,7 +18,7 @@ def decir(c, texto, rol="assistant"):
 
 def nuevo():
     c = Conversacion()
-    decir(c, "Bienvenido a **Triple-T — Asistente de análisis crediticio**. Uso académico; solo datos ficticios/anónimos. Las decisiones corresponden al analista. " + AYUDA)
+    decir(c, "Hola, soy **Triple-T**. Cuéntame qué crédito personal quieres explorar y te ayudaré paso a paso.\n\nPuedes empezar con un monto, un plazo y una TEA. Usa solo datos ficticios; la decisión final corresponde al analista.")
     return c
 
 
