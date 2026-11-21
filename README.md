@@ -15,8 +15,14 @@ Sin configuración o consentimiento, el chat funciona en modo local.
    Define `GEMINI_API_KEY`, `GEMINI_MODEL` y `GEMINI_FREE_TIER_CONFIRMED = true`
    únicamente tras verificar acceso gratuito. También se admiten variables de entorno.
    No compartas la clave en chat, GitHub, capturas ni informes.
-4. En el panel lateral, acepta enviar **solo consultas ficticias** y pulsa
-   «Activar / reactivar IA experimental». Puedes volver a «Usar modo local».
+4. Abre «Modo local» junto al título y activa «Activar Gemini con ese consentimiento»
+   tras leer el aviso de consultas ficticias. El mismo interruptor vuelve al modo local.
+   Configuración disponible no significa conexión probada: el panel indica si Gemini
+   ya respondió en la sesión y muestra un motivo seguro cuando falla.
+
+El chat presenta las herramientas a medida que hacen falta: escribe «subir boletas»,
+«ver gráfico» o «genera PDF». El expediente, edición manual, costos y casos ficticios
+están en la barra lateral, cerrada al comenzar. [Cambios de interfaz y comprobaciones pendientes](docs/CHAT_CONTEXTUAL.md).
 
 El nivel gratuito puede usar el contenido enviado para mejorar productos.
 No se transmiten documentos ni OCR; el detector de identificadores es conservador

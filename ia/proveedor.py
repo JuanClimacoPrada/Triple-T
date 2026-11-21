@@ -17,6 +17,17 @@ class ConfigIA:
     def disponible(self):
         return bool(self.api_key and re.fullmatch(r"gemini-[a-z0-9.-]{1,80}", self.modelo) and self.gratuito_confirmado)
 
+    @property
+    def pendientes(self):
+        campos = []
+        if not self.api_key:
+            campos.append("GEMINI_API_KEY")
+        if not re.fullmatch(r"gemini-[a-z0-9.-]{1,80}", self.modelo):
+            campos.append("GEMINI_MODEL (identificador gemini-…)")
+        if not self.gratuito_confirmado:
+            campos.append("GEMINI_FREE_TIER_CONFIRMED")
+        return campos
+
 
 def configuracion(secrets=None):
     def leer(nombre):
@@ -26,8 +37,27 @@ def configuracion(secrets=None):
             return secrets.get(nombre, "") if secrets is not None else ""
         except Exception:
             return ""
-    return ConfigIA(str(leer("GEMINI_API_KEY")), str(leer("GEMINI_MODEL")),
-                    str(leer("GEMINI_FREE_TIER_CONFIRMED")).lower() == "true")
+    return ConfigIA(str(leer("GEMINI_API_KEY")).strip(), str(leer("GEMINI_MODEL")).strip().removeprefix("models/"),
+                    str(leer("GEMINI_FREE_TIER_CONFIRMED")).strip().lower() == "true")
+
+
+class ErrorProveedor(Exception):
+    """Solo códigos seguros; nunca texto de la excepción remota."""
+
+
+def codigo_error(error):
+    codigo = getattr(error, "code", None)
+    if codigo in (401, 403):
+        return "ACCESO"
+    if codigo == 429:
+        return "CUOTA"
+    if codigo == 404:
+        return "MODELO"
+    if codigo == 400:
+        return "SOLICITUD"
+    if isinstance(error, TimeoutError) or "timeout" in type(error).__name__.lower():
+        return "TIEMPO"
+    return "CONEXION"
 
 
 INSTRUCCION = """Eres un extractor de intenciones, NO un asesor ni agente ejecutor.
@@ -54,8 +84,11 @@ class Gemini:
         if not self.config.disponible:
             raise ValueError("Configuración IA incompleta.")
         # Imports diferidos: sin SDK, la aplicación local sigue disponible.
-        from google import genai
-        from google.genai import types
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise ErrorProveedor("SDK") from None
 
         async def llamada():
             http = types.HttpOptions(
@@ -70,4 +103,7 @@ class Gemini:
                         max_output_tokens=1024, response_mime_type="application/json", response_json_schema=ESQUEMA,
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))), timeout=15)
                 return respuesta.text
-        return asyncio.run(llamada())
+        try:
+            return asyncio.run(llamada())
+        except Exception as error:
+            raise ErrorProveedor(codigo_error(error)) from None

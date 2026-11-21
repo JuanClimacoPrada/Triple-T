@@ -5,7 +5,18 @@ from conversacion.intenciones import interpretar, normalizar
 from conversacion.modelos import Interpretacion
 from ia.privacidad import mensaje_admisible, contexto_minimo
 from ia.esquemas import validar_json
-from ia.proveedor import Gemini
+from ia.proveedor import Gemini, ErrorProveedor
+
+ERRORES = {
+    "ACCESO": "Gemini no autorizó el acceso. El responsable debe revisar la clave y los permisos del proyecto.",
+    "CUOTA": "Gemini indicó un límite de cuota. Continúa en modo local y vuelve a intentarlo más tarde.",
+    "MODELO": "Gemini no encontró el modelo configurado. Revisa GEMINI_MODEL y su disponibilidad en la cuenta.",
+    "SOLICITUD": "Gemini no aceptó la solicitud. Revisa la compatibilidad del modelo con la salida estructurada.",
+    "TIEMPO": "Gemini tardó demasiado en responder. Puedes continuar en modo local.",
+    "SDK": "Falta la dependencia de Gemini en el servidor. El responsable debe revisar requirements.txt.",
+    "CONEXION": "No se pudo completar la conexión con Gemini. Puedes continuar en modo local.",
+    "RESPUESTA": "La respuesta de Gemini no superó la validación. Reformula con cifras y campos explícitos.",
+}
 
 
 @dataclass
@@ -16,9 +27,12 @@ class EstadoIA:
     errores: int = 0
     circuito_abierto: bool = False
     ultima_ruta: str = "LOCAL"
+    ultimo_error: str = ""
+    respuestas_validas: int = 0
 
 
 def resolver(c, texto, estado, config, proveedor=None):
+    estado.ultima_ruta = "LOCAL"
     local = interpretar(texto, c.campo_preguntado)
     t = normalizar(texto)
     # Bloqueo anterior a cualquier conexión; nunca usar excepciones para mostrar texto sensible.
@@ -61,11 +75,14 @@ def resolver(c, texto, estado, config, proveedor=None):
         respuesta = (proveedor or Gemini(config)).interpretar(texto, contexto)
         interpretacion, referente = validar_json(respuesta, texto, c)
         estado.ultima_ruta = "GEMINI_VALIDADO"
+        estado.ultimo_error = ""
+        estado.respuestas_validas += 1
         return interpretacion, referente, "Interpretación IA validada localmente; los cálculos y las respuestas proceden del motor Python."
-    except Exception:
+    except Exception as error:
         estado.errores += 1
         estado.habilitado = False
         estado.circuito_abierto = True
+        estado.ultimo_error = str(error) if isinstance(error, ErrorProveedor) and str(error) in ERRORES else "RESPUESTA"
         # No incorporar salida ni texto de error del proveedor a logs, mensajes o PDF.
         return Interpretacion("DESCONOCIDO", source_text=texto, requires_clarification=True,
-            warnings=("Reformule con cifras y campos explícitos para continuar localmente; no se modificaron los datos ni el informe.",)), None, "IA no disponible; continuamos en modo local. Reactive conscientemente tras revisar configuración/cuota."
+            warnings=("Reformule con cifras y campos explícitos para continuar localmente; no se modificaron los datos ni el informe.",)), None, "IA no disponible; continuamos en modo local. " + ERRORES[estado.ultimo_error]
