@@ -62,8 +62,8 @@ def interpretar(texto: str, campo_pendiente=None) -> Interpretacion:
     separador = r"\s*(?:(?:es|de|son|a|en|por|del)\s+)?(?:[:=]\s*)?"
     buscar("ingreso", rf"\b(?:gana|ingresos?(?:\s+(?:netos?|mensuales?|declarados?))*){separador}{MONEDA}({NUM})(?![\d.,]|\s*%)")
     buscar("gastos", rf"\b(?:gastos?(?:\s+mensuales?)?|gasta){separador}{MONEDA}({NUM})")
-    buscar("otras_cuotas", rf"\b(?:otras?\s+(?:cuotas|deudas)(?:\s+mensuales)?|deudas?\s+mensuales|cuotas?\s+existentes){separador}{MONEDA}({NUM})")
-    buscar("monto", rf"\b(?:solicita|solicito|pido|pedir|monto(?:\s+solicitado)?|prestamo(?:\s+personal)?|credito\s+personal){separador}{MONEDA}({NUM})")
+    buscar("otras_cuotas", rf"\b(?:otras?\s+(?:cuotas|deudas)(?:\s+mensuales)?|deudas?\s+mensuales|cuotas?\s+existentes|cuotas){separador}{MONEDA}({NUM})")
+    buscar("monto", rf"\b(?:quiero|solicita|solicito|pido|pedir|monto(?:\s+solicitado)?|prestamo(?:\s+personal)?|credito\s+personal){separador}{MONEDA}({NUM})")
     buscar("meses", rf"\b(?:a|en|plazo(?:\s+(?:fuera|sea|de|a))?)\s*({NUM})\s*(meses?|anos?)\b", True)
     buscar("estabilidad_meses", rf"\b(?:estabilidad|continuidad|antiguedad)(?:\s+(?:de|es|:))?\s*({NUM})\s*(meses?|anos?)\b", True)
     buscar("tea", rf"\b(?:tea|tasa\s+efectiva\s+anual){separador}({NUM})\s*%?")
@@ -82,6 +82,9 @@ def interpretar(texto: str, campo_pendiente=None) -> Interpretacion:
         asignar("dias_mora", None)
     if entidades.get("dias_mora") is not None and entidades["dias_mora"] > 0:
         asignar("historial", "MORA_DECLARADA")
+    elif re.search(r"\b(?:tiene mora|tengo mora|con mora|mora declarada)\b", t):
+        asignar("historial", "MORA_DECLARADA")
+        asignar("dias_mora", None)
     if re.search(r"\b(?:no estan descontadas|no descontadas|planilla no descontada|no se descuentan)\b", t):
         asignar("descuento_planilla", "NO_DESCONTADAS")
     elif re.search(r"\b(?:ya estan descontadas|todas estan descontadas|planilla descontada|ya descontadas)\b", t):

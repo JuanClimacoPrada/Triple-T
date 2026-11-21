@@ -16,8 +16,13 @@ def decir(c, texto, rol="assistant"):
     c.mensajes.append(Mensaje(rol, texto, c.revision))
 
 
-def nuevo():
+def nuevo(guiado=False):
     c = Conversacion()
+    if guiado:
+        from experiencia.flujo import Flujo
+        c.flujo = Flujo()
+        decir(c, "Hola, soy **Triple-T**. Te ayudaré a revisar una solicitud paso a paso. ¿Iniciamos una evaluación o prefieres simular un préstamo?")
+        return c
     decir(c, "Hola, soy **Triple-T**. Cuéntame qué crédito personal quieres explorar y te ayudaré paso a paso.\n\nPuedes empezar con un monto, un plazo y una TEA. Usa solo datos ficticios; la decisión final corresponde al analista.")
     return c
 
@@ -31,6 +36,9 @@ def invalidar(c):
     c.informe = None
     c.informe_revision = None
     c.pendiente = None
+    if c.flujo:
+        from experiencia.flujo import registrar_revision
+        registrar_revision(c, "Datos o evidencia modificados; resultados anteriores no vigentes")
 
 
 def validar_cambios(c, cambios):
@@ -97,22 +105,32 @@ def evaluar_actual(c, vista="RESUMEN", responder=True):
     c.resultado = resultado_para(c, c.expediente)
     actualizar_estado(c)
     c.vista = vista
-    if responder:
+    if responder and not c.flujo:
         decir(c, respuesta_calculo(c.expediente, c.resultado))
         c.campo_preguntado, siguiente = pregunta(c.expediente)
         decir(c, siguiente)
 
 
 def proponer(c, cambios, fuente="DECLARADO_EN_CHAT"):
+    if c.pendiente:
+        decir(c, "Confirma o cancela la modificación pendiente antes de proponer otra.")
+        return
     cambios = validar_cambios(c, cambios)
     sensibles = {k: v for k, v in cambios.items() if getattr(c.expediente, k) is not None and getattr(c.expediente, k) != v
                  and k not in ("tipo_credito", "moneda") and getattr(c.expediente, k) not in ("DESCONOCIDO", "SIN_ACLARAR")}
     if sensibles:
         c.pendiente = dict(accion="CAMBIOS", cambios=cambios, fuente=fuente, revision=c.revision)
         c.estado = "ACLARACION_PENDIENTE"
-        decir(c, "Confirma los cambios del expediente: " + "; ".join(f"{k}: {getattr(c.expediente, k)} → {v}" for k, v in sensibles.items()) + ". Se invalidarán escenarios e informes anteriores.")
+        from experiencia.preguntas import ETIQUETAS as etiquetas, legible
+        decir(c, "Confirma los cambios del expediente: " + "; ".join(f"{etiquetas.get(k, k)}: {legible(getattr(c.expediente, k))} → {legible(v)}" for k, v in sensibles.items()) + ". Se invalidarán escenarios e informes anteriores.")
     else:
         aplicar(c, cambios, fuente)
+        if c.flujo:
+            from experiencia.flujo import siguiente
+            for k in cambios:
+                c.flujo.diferidos.pop(k, None)
+            decir(c, "Datos registrados como declarados. " + siguiente(c))
+            return
         decir(c, "Registrado como " + fuente + ": " + "; ".join(f"{k}={v}" for k, v in cambios.items()))
         evaluar_actual(c)
 
@@ -130,6 +148,12 @@ def confirmar_accion(c, aceptar):
     if p["accion"] == "REINICIAR":
         return True  # La UI sustituye todo el estado y las claves de widgets.
     aplicar(c, p["cambios"], p["fuente"])
+    if c.flujo:
+        from experiencia.flujo import siguiente
+        for k in p["cambios"]:
+            c.flujo.diferidos.pop(k, None)
+        decir(c, "Cambio confirmado. " + siguiente(c))
+        return False
     evaluar_actual(c)
     return False
 
@@ -162,6 +186,13 @@ def crear_escenario(c, cambios, referente=None):
     c.informe = None
     c.informe_revision = None
     c.estado, c.vista = "SIMULACION", "GRAFICO"
+    if c.flujo:
+        from experiencia.flujo import registrar_revision
+        registrar_revision(c, "Escenario recalculado; expediente base conservado")
+        c.flujo.revision_confirmada = c.revision
+        c.flujo.etapa = "RESULTADOS"
+        decir(c, "Escenario calculado por el motor. La base se conserva intacta; revisa las diferencias en el resumen.")
+        return
     decir(c, "Escenario activo: " + "; ".join(f"{k}={v}" for k, v in parametros.items()) + ". El expediente, fuentes y evidencias base se conservan. Los parámetros no indicados mantienen el escenario activo o, si no existe, la base.")
     decir(c, respuesta_calculo(exp, r, True))
 
@@ -171,14 +202,12 @@ def actual(c):
 
 
 def recibir(c, texto, *, estado_ia=None, config_ia=None, proveedor_ia=None):
+    # Sprint 5: ninguna captura, ambigüedad o documento puede activar Gemini.
+    if c.flujo:
+        from experiencia.flujo import recibir_guiado
+        return recibir_guiado(c, texto)
     referente = None
-    if estado_ia is not None and config_ia is not None:
-        from ia.politicas import resolver
-        i, referente, aviso = resolver(c, texto, estado_ia, config_ia, proveedor_ia)
-        if aviso:
-            decir(c, aviso)
-    else:
-        i = interpretar(texto, c.campo_preguntado)
+    i = interpretar(texto, c.campo_preguntado)
     if i.bloqueado:
         decir(c, " ".join(i.warnings))
         return

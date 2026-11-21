@@ -23,7 +23,7 @@ class ErrorDocumento(ValueError):
 
 
 def contiene_identificadores(texto):
-    return bool(re.search(r"(?i)\b(?:DNI|RUC|pasaporte|nombre(?:s)?|apellido(?:s)?|titular)\s*[:#=]\s*\S+|\b\d{8}\b|\b\d{11}\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", texto))
+    return bool(re.search(r"(?i)\b(?:DNI|RUC|pasaporte|nombre(?:s)?|apellido(?:s)?|titular|direccion|dirección|domicilio|partida|cuenta|CCI|IBAN|telefono|teléfono)\s*[:#=]\s*\S+|\b\d{8}\b|\b\d{11}\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", texto))
 
 
 def texto_seguro(texto):
@@ -81,7 +81,9 @@ def candidatos(texto, documento_id, nombre, pagina):
     return encontrados
 
 
-def leer_archivo(nombre, contenido, sintetico=False, cantidad=1):
+def leer_archivo(nombre, contenido, sintetico=False, cantidad=1, tipo="BOLETA"):
+    if tipo not in ("BOLETA", "OTRO_INGRESO", "PATRIMONIO"):
+        raise ErrorDocumento("Seleccione boleta, otro respaldo de ingresos o patrimonio.")
     limpio = validar_archivo(nombre, contenido, sintetico, cantidad)
     documento_id = uuid4().hex
     paginas, avisos, previsualizaciones = [], [], []
@@ -151,13 +153,15 @@ def leer_archivo(nombre, contenido, sintetico=False, cantidad=1):
                 buffer = BytesIO()
                 preview.save(buffer, format="PNG")
                 previsualizaciones.append(buffer.getvalue())
-        evidencias = [e for pagina, texto in paginas for e in candidatos(texto, documento_id, limpio, pagina)]
-        if not evidencias:
+        evidencias = [e for pagina, texto in paginas for e in candidatos(texto, documento_id, limpio, pagina)] if tipo == "BOLETA" else []
+        if not evidencias and tipo == "BOLETA":
             avisos.append("No se identificó un neto inequívoco. Transcriba manualmente y confirme; no se ha importado ningún importe.")
+        if tipo != "BOLETA":
+            avisos.append("Respaldo presentado para revisión manual. Sin extracción de ingresos ni verificación de titularidad; no modifica capacidad ni promedio.")
         return dict(id=documento_id, nombre=limpio, paginas=paginas, evidencias=evidencias,
-                    avisos=avisos, previews=previsualizaciones)
+                    avisos=avisos, previews=previsualizaciones, tipo=tipo)
     except ImportError:
-        return dict(id=documento_id, nombre=limpio, paginas=[], evidencias=[], previews=[],
+        return dict(id=documento_id, nombre=limpio, paginas=[], evidencias=[], previews=[], tipo=tipo,
                     avisos=["Paquete de lectura no disponible. Transcripción manual explícita requerida."])
     except ErrorDocumento:
         raise

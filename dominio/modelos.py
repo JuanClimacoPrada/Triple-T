@@ -24,6 +24,21 @@ class Evidencia:
 
 
 @dataclass(frozen=True)
+class Respaldo:
+    documento_id: str
+    tipo: str
+    estado: str = "PRESENTADO_PENDIENTE_REVISION"
+    tipo_bien: str = "SIN_DECLARAR"
+    documento_presentado: str = "OTRO"
+    valor: Decimal | None = None
+    fuente_valor: str = "SIN_DECLARAR"
+    relacion: str = "SIN_DECLARAR"
+    fecha: date | None = None
+    observacion: str = ""
+    verificacion: str = "SIN_VERIFICACION_EXTERNA"
+
+
+@dataclass(frozen=True)
 class Cargo:
     concepto: str
     importe: Decimal
@@ -47,6 +62,7 @@ class Expediente:
     moneda: str = "PEN"
     fecha: date = field(default_factory=date.today)
     evidencias: tuple[Evidencia, ...] = ()
+    respaldos: tuple[Respaldo, ...] = ()
     cargos: tuple[Cargo, ...] = ()
     cargos_completos: bool = False
     fecha_desembolso: date | None = None
