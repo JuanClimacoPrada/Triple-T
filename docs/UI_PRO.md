@@ -23,6 +23,20 @@ Los importes, score, riesgo y porcentajes ilustrativos del paquete no se utiliza
 - HTML dinámico escapado, iconos SVG locales, sin fuentes externas ni nuevas
   dependencias. Tema claro y distribución adaptable mediante CSS.
 
+## Ajuste de conversación
+
+El historial utiliza `st.container(autoscroll=True)` para seguir los mensajes
+nuevos con las burbujas HTML personalizadas. La entrada se coloca inmediatamente
+debajo del historial, antes de los controles contextuales. Las sugerencias se
+agrupan horizontalmente y saltan de línea cuando falta ancho. Las etapas quedan
+en un desplegable encima del historial, con la etapa actual visible en su título.
+El aviso sobre revisiones anteriores se concentra en ese desplegable.
+
+Se requiere Streamlit 1.57 o posterior para usar estas opciones nativas; el mínimo
+se actualiza en `requirements.txt`. No se inyecta JavaScript ni se crean iframes.
+Este ajuste tampoco se ha probado en ejecución: la validación automatizada y
+visual sigue pendiente de autorización del responsable.
+
 ## Sentinel y Gemini
 
 `SENTINEL_URL` se configura en Secrets de Streamlit o como variable de entorno.
