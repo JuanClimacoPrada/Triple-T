@@ -1,11 +1,36 @@
 # Triple-T — asistente académico de análisis crediticio
 
+## Sprint 4 — IA opcional, cálculos locales
+
+Gemini interpreta paráfrasis en español mediante JSON validado localmente. Los
+cálculos, explicaciones, confirmaciones, escenarios y PDF siguen en Python.
+Sin configuración o consentimiento, el chat funciona en modo local.
+
+1. Instala `requirements.txt` y ejecuta Streamlit como se indica abajo.
+2. El responsable verifica el nivel gratuito de su cuenta en
+   [Google AI Studio](https://aistudio.google.com/apikey) y la
+   [tarifa vigente](https://ai.google.dev/gemini-api/docs/pricing), sin activar facturación.
+3. Copia `.streamlit/secrets.toml.example` a `.streamlit/secrets.toml` (ignorado
+   por Git), o configura Secrets en Community Cloud después de la revisión.
+   Define `GEMINI_API_KEY`, `GEMINI_MODEL` y `GEMINI_FREE_TIER_CONFIRMED = true`
+   únicamente tras verificar acceso gratuito. También se admiten variables de entorno.
+   No compartas la clave en chat, GitHub, capturas ni informes.
+4. En el panel lateral, acepta enviar **solo consultas ficticias** y pulsa
+   «Activar / reactivar IA experimental». Puedes volver a «Usar modo local».
+
+El nivel gratuito puede usar el contenido enviado para mejorar productos.
+No se transmiten documentos ni OCR; el detector de identificadores es conservador
+y no garantiza anonimización. No se habilita facturación ni se selecciona otro
+modelo ante errores. La confirmación de gratuidad es declarativa, no una comprobación
+automática de la cuenta. [Configuración, aceptación y pendientes](docs/SPRINT_4.md).
+
 ## Sprint 3 — conversación principal
 
 Introduce datos y consultas en español desde el chat: captura múltiple, preguntas
 por faltantes, cuota parcial, correcciones confirmadas, boletas, escenarios, gráficos
 y PDF. El panel experto y el análisis estratégico son secundarios; no es obligatorio
-recorrer pestañas. Es un intérprete **local de intenciones y reglas**, sin IA generativa.
+recorrer pestañas. El Sprint 3 aporta el intérprete **local de intenciones y reglas**;
+el Sprint 4 añade la interpretación remota opcional.
 
 Ejemplo: «Cliente gana 3500 soles, solicita 10000 soles a 12 meses con TEA 25%»;
 después «¿cuál es la cuota?», «gastos 1400 y otras cuotas 300» o «¿y a 24 meses?».

@@ -12,14 +12,18 @@ from servicios.finanzas import fechas_mensuales
 from motor import perdida_esperada_ilustrativa
 from ui_estrategia import mostrar_estrategia
 from ui_resultados import mostrar_resultado
+from ia.proveedor import configuracion
+from ia.politicas import EstadoIA
 
 
 def reiniciar_ui(caso=None):
     epoca = st.session_state.get("epoca", 0) + 1
+    ia = st.session_state.get("ia", EstadoIA())
+    ia.habilitado = ia.consentimiento = False
     for key in list(st.session_state):
         del st.session_state[key]
     c = nuevo()
-    st.session_state.update(epoca=epoca, conversacion=c)
+    st.session_state.update(epoca=epoca, conversacion=c, ia=ia)
     if caso:
         datos = CASOS[caso].copy()
         datos.update(historial="MORA_DECLARADA" if datos["dias_mora"] else "SIN_MORA_DECLARADA", descuento_planilla="NO_DESCONTADAS")
@@ -29,7 +33,8 @@ def reiniciar_ui(caso=None):
 
 
 def ejecutar(texto):
-    recibir(st.session_state.conversacion, texto)
+    recibir(st.session_state.conversacion, texto, estado_ia=st.session_state.ia,
+            config_ia=configuracion(st.secrets))
 
 
 def pedir_caso(nombre):
@@ -162,10 +167,30 @@ def editor(c):
 def mostrar_chat():
     if "conversacion" not in st.session_state:
         reiniciar_ui()
+    if "ia" not in st.session_state:
+        st.session_state.ia = EstadoIA()
     c = st.session_state.conversacion
     st.title("Triple-T — Asistente de análisis crediticio")
-    st.caption("Uso académico; datos ficticios. Chat local por intenciones y reglas, sin IA generativa ni APIs de pago.")
+    st.caption("Uso académico; solo datos ficticios. Modo local siempre disponible; Gemini opcional para interpretar lenguaje, sin calcular ni decidir créditos.")
     with st.sidebar:
+        cfg = configuracion(st.secrets)
+        ia = st.session_state.ia
+        st.subheader("Modo de conversación")
+        st.caption("IA experimental envía únicamente la consulta sintética filtrada y campos numéricos/etiquetas mínimos a Google. El nivel gratuito puede usar esos datos para mejorar sus productos. Nunca envíe datos reales, archivos ni texto OCR.")
+        consentimiento = st.checkbox("Consiento enviar únicamente consultas ficticias a Gemini bajo esas condiciones", key="ia_consentimiento", disabled=not cfg.disponible)
+        ia.consentimiento = consentimiento and cfg.disponible
+        if not ia.consentimiento:
+            ia.habilitado = False
+        if not cfg.disponible:
+            st.caption("Modo local: faltan clave/modelo o confirmación de nivel gratuito del responsable. Configure Secrets; no comparta la clave aquí.")
+        if ia.circuito_abierto:
+            st.warning("IA detenida tras error o límite. Se conserva el expediente y continúa el modo local.")
+        if st.button("Activar / reactivar IA experimental", disabled=not ia.consentimiento or ia.llamadas >= 20):
+            ia.habilitado, ia.circuito_abierto = True, False
+        if st.button("Usar modo local"):
+            ia.habilitado = False
+        st.info("Modo IA experimental (prioridad local)" if ia.habilitado else "Modo local")
+        st.caption(f"Llamadas remotas de esta sesión: {ia.llamadas}/20. Una por turno; sin reintentos automáticos.")
         st.header("Expediente actual")
         st.caption(f"Conversación: {c.estado} · Revisión {c.revision}")
         fuentes = dict(c.expediente.origen_campos)
@@ -193,7 +218,7 @@ def mostrar_chat():
                 st.caption("Intercambio anterior; consulte los resultados actuales debajo. No usar como informe vigente.")
     texto = st.chat_input("Escribe tu consulta o datos ficticios en español", key="chat_principal")
     if texto is not None:
-        recibir(c, texto)
+        ejecutar(texto)
         st.rerun()
     botones = st.columns(5)
     for col, etiqueta, orden in zip(botones, ["Añadir boleta", "Ver gráfico", "Generar PDF", "Qué falta", "Ayuda"],

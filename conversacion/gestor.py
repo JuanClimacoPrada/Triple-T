@@ -134,14 +134,14 @@ def confirmar_accion(c, aceptar):
     return False
 
 
-def crear_escenario(c, cambios):
+def crear_escenario(c, cambios, referente=None):
     if c.pendiente:
         raise ValueError("Confirme o cancele primero el cambio de expediente pendiente.")
     if set(cambios) - {"monto", "meses", "tea", "caida", "moneda"}:
         raise ValueError("Simulación soporta monto, plazo, TEA y caída de ingresos; especifique esos campos.")
     if c.expediente.tipo_credito != "personal" or c.expediente.moneda != "PEN":
         raise ValueError("Producto no evaluable todavía; solo personal PEN.")
-    parametros = dict(c.parametros_escenario)  # Seguimientos continúan el escenario activo, etiquetado.
+    parametros = {} if referente == "BASE" else dict(c.parametros_escenario)
     parametros.update({k: v for k, v in cambios.items() if k != "moneda"})
     monto, meses, tea = (parametros.get(k, getattr(c.expediente, k)) for k in ("monto", "meses", "tea"))
     if any(v is None for v in (monto, meses, tea)):
@@ -170,8 +170,15 @@ def actual(c):
     return (c.escenario, c.resultado_escenario) if c.escenario is not None else (c.expediente, c.resultado)
 
 
-def recibir(c, texto):
-    i = interpretar(texto, c.campo_preguntado)
+def recibir(c, texto, *, estado_ia=None, config_ia=None, proveedor_ia=None):
+    referente = None
+    if estado_ia is not None and config_ia is not None:
+        from ia.politicas import resolver
+        i, referente, aviso = resolver(c, texto, estado_ia, config_ia, proveedor_ia)
+        if aviso:
+            decir(c, aviso)
+    else:
+        i = interpretar(texto, c.campo_preguntado)
     if i.bloqueado:
         decir(c, " ".join(i.warnings))
         return
@@ -194,7 +201,7 @@ def recibir(c, texto):
             c.vista = "ESTRATEGIA"
             decir(c, "Comparación estratégica de tres alternativas × tres escenarios, separada de la evaluación individual. Abajo se muestran los nueve escenarios del módulo existente.")
         elif i.intent == "SIMULAR":
-            crear_escenario(c, i.entities)
+            crear_escenario(c, i.entities, referente)
         elif i.intent == "FALTANTES":
             campos = faltantes(c.expediente)
             decir(c, "Faltan: " + "; ".join(ETIQUETAS[k] for k in campos) if campos else "No faltan campos básicos. Revisa las alertas y la evidencia pendiente.")
@@ -215,11 +222,17 @@ def recibir(c, texto):
         elif i.intent in ("CUOTA", "ANALIZAR", "EXPLICAR", "DECISION", "AMORTIZACION", "GRAFICO", "PDF"):
             if i.intent == "DECISION":
                 decir(c, "No puedo decidir la concesión del crédito. Estas son las alertas y limitaciones para revisión humana; no hay PD estimada ni verificación externa.")
+            if referente == "BASE" and c.escenario is not None:
+                c.escenario = c.resultado_escenario = None
+                c.parametros_escenario = {}
+                c.informe = None
             if c.escenario is None:
                 evaluar_actual(c, i.intent)
             else:
                 c.vista = i.intent
                 decir(c, respuesta_calculo(*actual(c), escenario=True))
+            if i.intent == "EXPLICAR":
+                decir(c, f"RN-03: DTI total = (otras cuotas + pago mensual total nuevo) / ingreso admisible. Umbral didáctico configurado: {c.config.umbral_dti:.2%}; igualdad no activa la alerta. No es política del BCP. Consulte las cifras y fuentes del resultado vigente; N/D significa que no puede calcularse.")
         if i.intent == "EVIDENCIAS":
             c.vista = "EVIDENCIAS"
         if "GRAFICO" in i.acciones:
