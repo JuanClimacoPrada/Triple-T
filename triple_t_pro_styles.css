@@ -30,6 +30,8 @@ header[data-testid="stHeader"] { background:transparent; height:2.7rem; }
 .tt-msg.user { flex-direction:row-reverse; }
 .tt-msg.user .tt-bubble { background:#d9efff;border-radius:13px 2px 13px 13px; }
 .tt-msg.user .tt-avatar { color:#137fee;background:#e2f3ff; }
+.st-key-tt_suggestions button { border-radius:18px!important; min-height:2rem; padding:.3rem .7rem; }
+.st-key-tt_suggestions button p { font-size:.76rem; }
 .tt-steps { list-style:none;margin:4px 0 12px;padding:0 0 0 20px; }
 .tt-steps li { position:relative;display:flex;align-items:center;gap:9px;font-size:.8rem;color:#61758d;margin:0;padding:5px 8px;min-height:31px; }
 .tt-steps li:not(:last-child)::after { content:"";position:absolute;left:19px;top:28px;height:13px;width:1px;background:#b8cde0; }

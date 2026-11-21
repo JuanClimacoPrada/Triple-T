@@ -163,6 +163,12 @@ def barra_lateral(c, editor, pedir_caso):
 
 
 def opciones(c):
+    # Flujo horizontal nativo: las sugerencias saltan de línea en pantallas estrechas.
+    with st.container(horizontal=True, gap="xsmall", key="tt_suggestions"):
+        opciones_contextuales(c)
+
+
+def opciones_contextuales(c):
     f = c.flujo
     if c.pendiente:
         return
@@ -340,12 +346,17 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                         st.caption("Todavía no hay cambios registrados.")
                 elif pagina == "AYUDA":
                     st.info("Comienza con un monto, plazo y TEA. Puedes responder varios datos juntos, preguntar por qué se solicitan o agregarlos después. Los documentos se procesan en el servidor, nunca en Gemini. El score externo no está integrado.")
-                with st.container(height=300, border=False, key="tt_conversation"):
+                with st.expander(f"Etapas · {TITULOS[c.flujo.etapa]}", expanded=False):
+                    st.markdown(steps_html(vm), unsafe_allow_html=True)
+                    st.caption("El panel financiero muestra la revisión vigente; los mensajes anteriores conservan el contexto de su momento.")
+                with st.container(height=300, border=False, key="tt_conversation", autoscroll=True):
                     for mensaje in c.mensajes:
                         st.markdown(message_html(mensaje.rol, mensaje.texto), unsafe_allow_html=True)
-                        if mensaje.rol == "assistant" and mensaje.revision < c.revision:
-                            st.caption("Revisión anterior; consulta el panel vigente.")
-                st.markdown(steps_html(vm), unsafe_allow_html=True)
+                texto = st.chat_input("Escribe tu consulta…", key="chat_principal")
+                if texto:
+                    with st.spinner("Revisando tu consulta…"):
+                        enviar(texto)
+                    st.rerun()
                 if c.flujo.ia_revision == c.revision:
                     st.caption("Asistencia sobre resultados · Ediciones y simulaciones siempre locales")
                 if c.pendiente:
@@ -378,11 +389,6 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                                 st.rerun()
                             except ValueError as error:
                                 st.warning(str(error))
-                texto = st.chat_input("Escribe tu consulta…", key="chat_principal")
-                if texto:
-                    with st.spinner("Revisando tu consulta…"):
-                        enviar(texto)
-                    st.rerun()
         with dashboard:
             with st.container(key="tt_dashboard_panel", border=True):
                 render_dashboard_area(vm)
