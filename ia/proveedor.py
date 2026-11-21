@@ -61,9 +61,6 @@ class Gemini:
             http = types.HttpOptions(
                 timeout=12000,
                 retry_options=types.HttpRetryOptions(attempts=1)
-            )http = types.HttpOptions(
-                timeout=12000,
-                retry_options=types.HttpRetryOptions(attempts=1)
             )
             async with genai.Client(api_key=self.config.api_key, vertexai=False, http_options=http).aio as client:
                 respuesta = await asyncio.wait_for(client.models.generate_content(
