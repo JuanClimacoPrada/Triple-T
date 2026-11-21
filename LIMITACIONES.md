@@ -75,3 +75,12 @@ Referencias conceptuales y técnicas (no certificación regulatoria):
 [SBS: créditos](https://www.sbs.gob.pe/usuarios/aprende-con-la-sbs/aprende-sobre-creditos),
 [Streamlit: cargas](https://docs.streamlit.io/develop/api-reference/widgets/st.file_uploader),
 [pypdf: PdfReader](https://pypdf.readthedocs.io/en/latest/modules/PdfReader.html).
+# IA opcional — Sprint 4
+
+Gemini permanece desactivado sin configuración y consentimiento. Solo consultas
+ficticias: los filtros no garantizan anonimización. El nivel gratuito puede usar
+contenido para mejorar productos; el borrado local no elimina retención del proveedor.
+La disponibilidad gratuita debe comprobarla el responsable, no se consulta su cuenta.
+Un límite por sesión no protege frente a múltiples sesiones anónimas. No publicar
+una demo con IA activa sin controles operativos adicionales. La interpretación real
+y Community Cloud aún requieren validación autorizada; ver `docs/SPRINT_4.md`.
