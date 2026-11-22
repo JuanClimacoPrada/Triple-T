@@ -56,8 +56,9 @@ autorización; no se han ejecutado pruebas para este ajuste.
 
 `SENTINEL_URL` se configura en Secrets de Streamlit o como variable de entorno.
 Debe ser una URL HTTPS externa fija, sin credenciales, parámetros ni fragmentos.
-La variable de entorno tiene prioridad. Si falta o no es válida, la tarjeta
-mantiene visible «Consultar Sentinel» deshabilitado.
+La variable de entorno tiene prioridad. Desde la mejora de riesgo hipotético,
+una URL ausente o vacía usa el portal oficial de referencia; una URL explícita
+inválida mantiene visible «Consultar Sentinel» deshabilitado.
 
 El enlace abre otra pestaña con `noopener noreferrer` y `no-referrer`; no añade
 datos del expediente. La tarjeta muestra «No disponible»: no hay API de Sentinel
@@ -70,6 +71,10 @@ Los documentos siguen procesándose en el servidor; nunca se envían a Gemini.
 La captura guiada y los cálculos continúan independientes de su disponibilidad.
 
 ## Estado de validación de esta entrega
+
+**Nota posterior:** el cambio de riesgo hipotético actualiza y ejecuta las pruebas
+automatizadas con autorización expresa. Véase `RIESGO_HIPOTETICO.md`. El texto
+siguiente documenta el estado histórico de la entrega inicial del diseño.
 
 Por instrucción del responsable, se prepara primero el PR para su merge manual.
 **No se ejecutaron pruebas automatizadas, arranque de la aplicación ni revisión

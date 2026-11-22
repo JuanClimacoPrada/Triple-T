@@ -1,13 +1,24 @@
 # Triple-T — asistente académico de análisis crediticio
 
+## Riesgo hipotético y Sentinel
+
+«Evaluación del riesgo crediticio» separa capacidad financiera de los supuestos
+de PD. En Indicadores se editan tres escenarios sin cifras precargadas, horizonte
+explícito, complemento 100% − PD y pérdida ilustrativa con LGD y exposición.
+No existe modelo predictivo validado. El score externo permanece no disponible;
+un score manual solo puede registrarse como simulado, con fuente y fecha.
+El enlace `SENTINEL_URL` abre el portal oficial sin datos del expediente.
+Consulta [alcance, contratos futuros y validación](docs/RIESGO_HIPOTETICO.md).
+
 ## Diseño profesional integrado
 
 Navegación lateral, chat guiado y panel financiero progresivo inspirado en el flyer.
 Los indicadores y gráficos utilizan el motor existente. La tarjeta «Score crediticio»
 muestra «No disponible» y permite configurar un enlace externo mediante
 `SENTINEL_URL`, sin transmitir el expediente. Consulta [integración y pendientes](docs/UI_PRO.md).
-Las pruebas y las capturas de esta entrega quedan pendientes por instrucción del
-responsable: primero revisará y fusionará el PR, después decidirá si autoriza las pruebas.
+El diseño inicial se entregó sin pruebas por instrucción del responsable. La mejora
+de riesgo incluye la actualización y ejecución de las pruebas autorizadas;
+la validación visual completa y capturas siguen pendientes.
 
 ## Sprint 5 — evaluación guiada, documentos y resumen visual
 
