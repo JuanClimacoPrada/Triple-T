@@ -134,7 +134,16 @@ def responder(c, texto, estado, config, *, permitido=False, proveedor=None):
         return
     estado.llamadas += 1
     try:
-        respuesta = (proveedor or Gemini(config)).explicar(texto, facts)
+        # Nunca transmitir texto libre: incluso un nombre no detectado por el
+        # filtro queda fuera. El proveedor recibe solo un tema de lista cerrada.
+        t = normalizar(texto)
+        tema = next((tema for patron, tema in (
+            (r"dti|endeud|ingreso", "Explica el endeudamiento calculado."),
+            (r"tcea", "Explica la TCEA calculada o sus pendientes."),
+            (r"document|boleta|propiedad", "Explica las limitaciones documentales."),
+            (r"cuota|pago", "Explica la cuota calculada."),
+        ) if re.search(patron, t)), "Explica los indicadores y alertas disponibles.")
+        respuesta = (proveedor or Gemini(config)).explicar(tema, facts)
         mensaje = validar_explicacion(respuesta, facts)
         estado.respuestas_validas += 1
         estado.ultima_ruta = "GEMINI_VALIDADO"

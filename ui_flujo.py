@@ -15,8 +15,8 @@ from ia.proveedor import configuracion
 from ui_documentos import mostrar_documentos
 from ui_resultados import mostrar_resultado
 from ui_estrategia import mostrar_estrategia
-from motor import perdida_esperada_ilustrativa
 from casos import CASOS
+from ui_riesgo import mostrar_riesgo
 from triple_t_pro_layout import (construir_vm, sentinel_config, load_styles, hero_html,
     message_html, steps_html, section_title, render_dashboard_area)
 
@@ -152,11 +152,7 @@ def barra_lateral(c, editor, pedir_caso):
                     c.config = Configuracion(D(str(umbral))/100, D(str(dif))/100, D(str(tope)))
                     invalidar(c)
                     st.rerun()
-            st.caption("Pérdida esperada ilustrativa; no estimación de riesgo")
-            pd = st.number_input("PD supuesta (%)", 0., 100., value=None, key="pd")
-            lgd = st.number_input("LGD supuesta (%)", 0., 100., value=None, key="lgd")
-            if pd is not None and lgd is not None and c.expediente.monto is not None:
-                st.write(f"Pérdida ilustrativa: S/ {perdida_esperada_ilustrativa(float(c.expediente.monto), pd, lgd):,.2f}")
+            st.caption("Escenarios de PD y pérdida esperada ilustrativa: Indicadores → Evaluación del riesgo crediticio. Requieren horizonte explícito.")
             st.button("Comparación estratégica A/B/C", on_click=enviar, args=("compara A, B y C",))
             for nombre in CASOS:
                 st.button("Cargar caso " + nombre.lower(), key="caso_" + nombre, on_click=pedir_caso, args=(nombre,))
@@ -239,7 +235,7 @@ def panel_ia(c):
     cfg = configuracion(st.secrets)
     permitido = ia_permitida(st.secrets)
     with st.expander("Preguntar a la IA sobre este análisis", expanded=c.flujo.ia_revision == c.revision):
-        st.caption("Opcional. Se envían tu pregunta filtrada y hechos mínimos de esta demostración a Google. El nivel gratuito puede usar los datos para mejorar productos. No se envían documentos, OCR, nombres de archivo, notas ni historial. La IA no edita el expediente.")
+        st.caption("Opcional. Se envían un tema predefinido y hechos mínimos de esta demostración a Google. El nivel gratuito puede usar los datos para mejorar productos. No se envían tu texto libre, documentos, OCR, nombres de archivo, notas, scores simulados ni supuestos de PD. La IA no edita el expediente.")
         consentimiento = st.checkbox("Consiento esta consulta sobre resultados de demostración", key="consentimiento_resultados")
         if not permitido:
             st.info("La consulta remota está deshabilitada por el responsable. Puedes seguir sin IA.")
@@ -404,6 +400,8 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                         with st.container(height=480, border=False, key="panel_" + nombre):
                             if nombre in ("Resumen", "Indicadores", "Gráficos"):
                                 render_dashboard_area(vm, nombre)
+                            if nombre in ("Resumen", "Indicadores"):
+                                mostrar_riesgo(c, vm, detalle=nombre == "Indicadores")
                             if c.flujo.etapa == "RESULTADOS" and not c.pendiente:
                                 resultados(c, nombre)
                             elif nombre in ("Detalle", "Simular", "Informe e IA"):

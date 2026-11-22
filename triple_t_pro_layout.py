@@ -14,6 +14,7 @@ from experiencia.tarjetas import estado_revision
 from experiencia.evidencia import pendientes_documentales
 from experiencia.flujo import faltan
 from servicios.finanzas import cronograma
+from servicios.proveedores_riesgo import SENTINEL_REFERENCIA
 
 CSS_FILE = Path(__file__).with_name("triple_t_pro_styles.css")
 
@@ -60,10 +61,10 @@ def sentinel_config(secrets=None):
     url = os.environ.get("SENTINEL_URL")
     if url is None:
         try:
-            url = secrets.get("SENTINEL_URL", "") if secrets is not None else ""
+            url = secrets.get("SENTINEL_URL", SENTINEL_REFERENCIA) if secrets is not None else SENTINEL_REFERENCIA
         except Exception:
-            url = ""
-    return url_segura(url)
+            url = SENTINEL_REFERENCIA
+    return url_segura(url or SENTINEL_REFERENCIA)
 
 
 def url_segura(url):
@@ -227,7 +228,6 @@ def render_dashboard_area(vm, seccion="Resumen"):
         section_title("Indicadores clave", "chart")
         st.dataframe([{"Indicador": k, "Valor": v} for k, v in vm.indicators], hide_index=True, use_container_width=True)
         st.caption("Capacidad neta = máximo entre cero e ingreso admisible menos gastos y otras cuotas. Capacidad con umbral = mínimo de esa disponibilidad y el margen del umbral DTI, limitado a cero. Son referencias académicas, no límites aprobados por una entidad.")
-        st.markdown(score_html(vm.sentinel_url), unsafe_allow_html=True)
         return
     if seccion == "Gráficos":
         section_title("Cuota por plazo", "chart")
