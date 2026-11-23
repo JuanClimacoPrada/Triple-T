@@ -1,5 +1,5 @@
 """Enrutamiento con opt-in, presupuesto por sesión y corte ante fallos."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from conversacion.intenciones import interpretar
 
 ERRORES = {
@@ -10,7 +10,7 @@ ERRORES = {
     "TIEMPO": "Gemini tardó demasiado en responder. Puedes continuar en modo local.",
     "SDK": "Falta la dependencia de Gemini en el servidor. El responsable debe revisar requirements.txt.",
     "CONEXION": "No se pudo completar la conexión con Gemini. Puedes continuar en modo local.",
-    "RESPUESTA": "La respuesta de Gemini no superó la validación. Reformula con cifras y campos explícitos.",
+    "RESPUESTA": "La respuesta de Gemini no superó la validación. Puedes continuar con el asistente local.",
 }
 
 
@@ -24,6 +24,8 @@ class EstadoIA:
     ultima_ruta: str = "LOCAL"
     ultimo_error: str = ""
     respuestas_validas: int = 0
+    revision_contexto: int | None = None
+    contexto_semantico: dict = field(default_factory=dict)
 
 
 def resolver(c, texto, estado, config, proveedor=None):

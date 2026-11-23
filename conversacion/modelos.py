@@ -41,3 +41,9 @@ class Conversacion:
     informe_revision: int | None = None
     campo_preguntado: str | None = None
     flujo: object | None = None
+    opciones_crediticias: tuple = ()
+    comparativa_crediticia: object | None = None
+    clave_comparativa: tuple | None = None
+    alternativa_propuesta: str | None = None
+    seleccion_alternativa: object | None = None
+    alternativa_en_contexto: str | None = None

@@ -98,26 +98,29 @@ class TestRiesgo(unittest.TestCase):
         self.assertIs(c.resultado, r)
         self.assertNotIn("pd", hechos(c))
 
-    def test_proveedor_recibe_solo_tema_y_hechos(self):
+    def test_proveedor_recibe_consulta_admisible_y_contexto_acotado(self):
         c = caso_confirmado()
         # Marcadores sintéticos para demostrar que ni notas ni OCR se filtran.
         c.expediente = replace(c.expediente, observacion="MARCADOR_PRIVADO", patrimonio="PATRIMONIO_PRIVADO")
         c.documentos.append({"nombre": "ARCHIVO_PRIVADO.pdf", "ocr": "OCR_PRIVADO"})
         class Proveedor:
             llamadas = []
-            def explicar(self, pregunta, facts):
-                self.llamadas.append((pregunta, facts))
-                return json.dumps(dict(intent="EXPLICAR", explanation_by_fact_ids=["cuota_base"], suggestions_from_allowlist=[], asks_clarification=False))
+            def interpretar(self, pregunta, contexto):
+                self.llamadas.append((pregunta, contexto))
+                return json.dumps({"solicitudes": [{
+                    "intencion": "EXPLICAR_RESULTADO", "referencia": {"objetivo": "BASE", "escenario": ""},
+                    "entidades": [], "incertidumbres": [], "hechos": ["cuota_base"], "respuesta": "{{cuota_base}}",
+                }]})
         p = Proveedor()
-        estado = EstadoIA(consentimiento=True)
+        estado = EstadoIA(habilitado=True, consentimiento=True)
         cfg = ConfigIA("clave-ficticia", "gemini-test", True)
         with patch("socket.create_connection", side_effect=AssertionError("Red no permitida")):
-            responder(c, "explica la cuota para personajeinventado", estado, cfg, permitido=True, proveedor=p)
+            responder(c, "¿cuánto tendría que soltar cada mes?", estado, cfg, permitido=True, proveedor=p)
         self.assertEqual(len(p.llamadas), 1)
         salida = json.dumps(p.llamadas)
-        for secreto in ("personajeinventado", "PRIVADO", "clave-ficticia"):
+        for secreto in ("PRIVADO", "clave-ficticia"):
             self.assertNotIn(secreto, salida)
-        self.assertEqual(p.llamadas[0][0], "Explica la cuota calculada.")
+        self.assertEqual(p.llamadas[0][0], "¿cuánto tendría que soltar cada mes?")
         responder(c, "dni 12345678", estado, cfg, permitido=True, proveedor=p)
         self.assertEqual(len(p.llamadas), 1)
 

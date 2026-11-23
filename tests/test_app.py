@@ -30,7 +30,7 @@ class TestApp(unittest.TestCase):
         app = self.iniciar()
         self.assertFalse(app.exception)
         self.assertEqual(len(app.chat_input), 1)
-        self.assertEqual(len(app.tabs), 6)
+        self.assertEqual(len(app.tabs), 7)
         self.boton(app, "Comparación estratégica A/B/C")
         estrategia = next(d.value for d in app.dataframe if "Alternativa" in d.value.columns)
         self.assertEqual(len(estrategia), 9)

@@ -36,6 +36,8 @@ def invalidar(c):
     c.informe = None
     c.informe_revision = None
     c.pendiente = None
+    from experiencia.comparador import invalidar_comparativa
+    invalidar_comparativa(c, reiniciar_opciones=True)
     if c.flujo:
         from experiencia.flujo import registrar_revision
         registrar_revision(c, "Datos o evidencia modificados; resultados anteriores no vigentes")
@@ -150,6 +152,7 @@ def confirmar_accion(c, aceptar):
     aplicar(c, p["cambios"], p["fuente"])
     if c.flujo:
         from experiencia.flujo import siguiente
+        c.flujo.iniciado = True
         for k in p["cambios"]:
             c.flujo.diferidos.pop(k, None)
         decir(c, "Cambio confirmado. " + siguiente(c))
@@ -182,6 +185,8 @@ def crear_escenario(c, cambios, referente=None):
         r.supuestos.append("Escenario parcial: cambios de préstamo; no valida capacidad ni resuelve discrepancias.")
     c.revision += 1
     c.escenario, c.resultado_escenario = exp, r
+    from experiencia.comparador import invalidar_comparativa
+    invalidar_comparativa(c)
     c.parametros_escenario = parametros
     c.informe = None
     c.informe_revision = None
@@ -281,8 +286,14 @@ def generar_informe(c):
     if exp.tipo_credito != "personal" or exp.moneda != "PEN":
         raise ValueError("Producto no evaluable; no se genera un informe financiero.")
     comparaciones = [("Base", c.resultado)] + ([("Escenario activo", c.resultado_escenario)] if c.escenario else [])
+    from experiencia.comparador import obtener
     try:
-        pdf = generar_pdf(exp, r, comparaciones, c.config)
+        alternativas = obtener(c)
+    except ValueError:
+        alternativas = None
+    try:
+        pdf = generar_pdf(exp, r, comparaciones, c.config, alternativas=alternativas,
+                          seleccion=c.seleccion_alternativa if alternativas else None, base=c.expediente)
     except Exception:
         raise ValueError("PDF no disponible; el informe en pantalla sigue accesible.") from None
     c.informe, c.informe_revision, c.estado = pdf, c.revision, "REPORTE"

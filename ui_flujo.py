@@ -9,7 +9,7 @@ from experiencia.preguntas import TITULOS, ETIQUETAS, legible
 from experiencia.ambientes import entorno, ia_permitida, AVISO_DEMO
 from experiencia.evidencia import pendientes_documentales
 from experiencia.tarjetas import comparacion
-from experiencia.ayuda_ia import disponible, responder, hechos, explicar_local, ALERTAS
+from experiencia.ayuda_ia import disponible, responder, ALERTAS
 from ia.politicas import EstadoIA, ERRORES
 from ia.proveedor import configuracion
 from ui_documentos import mostrar_documentos
@@ -17,16 +17,33 @@ from ui_resultados import mostrar_resultado
 from ui_estrategia import mostrar_estrategia
 from casos import CASOS
 from ui_riesgo import mostrar_riesgo
+from ui_alternativas import mostrar_alternativas
 from triple_t_pro_layout import (construir_vm, sentinel_config, load_styles, hero_html,
     message_html, steps_html, section_title, render_dashboard_area)
 
+TAB_POR_VISTA = {"ALTERNATIVAS": "Alternativas", "SIMULAR": "Simular", "DETALLE": "Detalle",
+                 "GRAFICO": "Gráficos", "PDF": "Informe e IA"}
 
-def enviar(texto):
+
+def abrir_pestana(c):
+    if c.vista in TAB_POR_VISTA:
+        st.session_state.pestana_analisis = TAB_POR_VISTA[c.vista]
+
+
+def cambiar_pestana(c):
+    if c.vista in TAB_POR_VISTA and TAB_POR_VISTA[c.vista] != st.session_state.pestana_analisis:
+        c.vista = "RESUMEN"
+
+
+def enviar(texto, *, desde_chat=False):
     c = st.session_state.conversacion
-    if c.flujo.ia_revision == c.revision:
+    vista_anterior = c.vista
+    if desde_chat:
         responder(c, texto, st.session_state.ia, configuracion(st.secrets), permitido=ia_permitida(st.secrets))
     else:
         recibir(c, texto)
+    if c.vista != vista_anterior:
+        abrir_pestana(c)
 
 
 def accion(nombre):
@@ -66,9 +83,11 @@ def accion(nombre):
         else:
             decir(c, siguiente(c))
     elif nombre == "SIN_IA":
-        f.ia_revision = None
-        st.session_state.ia.consentimiento = False
-        st.session_state["consentimiento_resultados"] = False
+        st.session_state.ia.habilitado = st.session_state.ia.consentimiento = False
+        st.session_state["consentimiento_gemini"] = False
+    elif nombre == "ALTERNATIVAS":
+        c.vista = "ALTERNATIVAS"
+        abrir_pestana(c)
     elif nombre == "PDF":
         try:
             generar_informe(c)
@@ -99,6 +118,7 @@ def navegar(pagina):
     if pagina == "SIMULADOR":
         if disponible(c):
             c.vista = "SIMULAR"
+            abrir_pestana(c)
         else:
             iniciar(c, True)
     elif pagina == "ANALISIS":
@@ -228,15 +248,13 @@ def simulador(c):
                 st.warning(str(error))
 
 
-def panel_ia(c):
-    if not disponible(c):
-        return
+def panel_ia():
     ia = st.session_state.ia
     cfg = configuracion(st.secrets)
     permitido = ia_permitida(st.secrets)
-    with st.expander("Preguntar a la IA sobre este análisis", expanded=c.flujo.ia_revision == c.revision):
-        st.caption("Opcional. Se envían un tema predefinido y hechos mínimos de esta demostración a Google. El nivel gratuito puede usar los datos para mejorar productos. No se envían tu texto libre, documentos, OCR, nombres de archivo, notas, scores simulados ni supuestos de PD. La IA no edita el expediente.")
-        consentimiento = st.checkbox("Consiento esta consulta sobre resultados de demostración", key="consentimiento_resultados")
+    with st.expander("Gemini opcional", expanded=False):
+        st.caption("Al activarlo, Google recibe la pregunta de demostración tras un filtro de privacidad y el contexto mínimo del caso. El nivel gratuito puede usar los datos para mejorar productos. Usa solo datos ficticios. Los documentos, sus transcripciones y las notas del expediente quedan en Triple-T.")
+        consentimiento = st.checkbox("Consiento el envío de consultas de demostración", key="consentimiento_gemini")
         if not permitido:
             st.info("La consulta remota está deshabilitada por el responsable. Puedes seguir sin IA.")
         elif cfg.pendientes:
@@ -246,13 +264,11 @@ def panel_ia(c):
         else:
             st.caption("Gemini ya respondió en esta sesión." if ia.respuestas_validas else "Configurado; aún sin respuesta remota en esta sesión.")
         if not consentimiento:
-            ia.consentimiento = False
-            c.flujo.ia_revision = None
-        if st.button("Activar preguntas sobre este análisis", disabled=not consentimiento or not permitido or not cfg.disponible or ia.llamadas >= 20):
+            ia.habilitado = ia.consentimiento = False
+        if st.button("Activar Gemini", disabled=not consentimiento or not permitido or not cfg.disponible or ia.llamadas >= 20 or ia.habilitado):
             ia.consentimiento = ia.habilitado = True
             ia.circuito_abierto = False
             ia.ultimo_error = ""
-            c.flujo.ia_revision = c.revision
             st.rerun()
         boton("Seguir sin IA", "SIN_IA")
         st.caption(f"Consultas remotas: {ia.llamadas}/20. Sin reintentos automáticos.")
@@ -263,6 +279,7 @@ def resultados(c, seccion):
     if r is None:
         return
     if seccion == "Resumen":
+        boton("Comparar alternativas del crédito", "ALTERNATIVAS")
         pendientes = faltan(c)
         if pendientes:
             st.caption("Por completar: " + ", ".join(ETIQUETAS[k] for k in pendientes))
@@ -270,10 +287,11 @@ def resultados(c, seccion):
         alertas = sorted(r.reglas, key=lambda a: {"discrepancia":0, "pendiente":1, "relevante":2}.get(a["nivel"], 3))
         if alertas:
             st.warning(ALERTAS.get(alertas[0]["regla"], "Revisa los datos y limitaciones antes de decidir."))
-            with st.expander("Ver todas las alertas"):
-                for a in alertas:
+            with st.expander("Otras alertas y detalles"):
+                for a in alertas[1:]:
                     st.write(ALERTAS.get(a["regla"], a["mensaje"]))
-                    if a["regla"] in ("RN-07", "VAL-05/07"):
+                for a in alertas:
+                    if a["regla"] in ("RN-07", "VAL-05/07", "RN-10", "RN-13"):
                         st.caption(a["mensaje"])
         for mensaje in pendientes_documentales(c):
             st.caption(mensaje)
@@ -298,7 +316,6 @@ def resultados(c, seccion):
         boton("Preparar informe PDF", "PDF")
         if c.informe is not None and c.informe_revision == c.revision and not c.pendiente:
             st.download_button("Descargar informe vigente", c.informe, "triple-t-informe.pdf", "application/pdf")
-        panel_ia(c)
 
 
 def mostrar(editor, reiniciar_ui, pedir_caso):
@@ -317,13 +334,8 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
     if "ia" not in st.session_state:
         st.session_state.ia = EstadoIA()
     c = st.session_state.conversacion
-    if c.flujo.revision_confirmada != c.revision:
-        c.flujo.ia_revision = None
-        st.session_state.ia.consentimiento = False
-        st.session_state["consentimiento_resultados"] = False
     if not ia_permitida(st.secrets):
-        c.flujo.ia_revision = None
-        st.session_state.ia.consentimiento = False
+        st.session_state.ia.habilitado = st.session_state.ia.consentimiento = False
     siguiente(c)
     load_styles()
     vm = construir_vm(c, sentinel_config(st.secrets))
@@ -355,10 +367,10 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                 texto = st.chat_input("Escribe tu consulta…", key="chat_principal")
                 if texto:
                     with st.spinner("Revisando tu consulta…"):
-                        enviar(texto)
+                        enviar(texto, desde_chat=True)
                     st.rerun()
-                if c.flujo.ia_revision == c.revision:
-                    st.caption("Asistencia sobre resultados · Ediciones y simulaciones siempre locales")
+                if st.session_state.ia.habilitado:
+                    st.caption("Gemini activo para consultas de demostración")
                 if c.pendiente:
                     st.info("Confirma la modificación o cancélala para conservar los datos.")
                     if st.button("Confirmar acción"):
@@ -389,12 +401,13 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                                 st.rerun()
                             except ValueError as error:
                                 st.warning(str(error))
+                panel_ia()
         with dashboard:
             with st.container(key="tt_dashboard_panel", border=True):
                 section_title("Resumen del análisis")
-                nombres = ["Resumen", "Indicadores", "Gráficos", "Detalle", "Simular", "Informe e IA"]
-                inicial = {"SIMULAR": "Simular", "DETALLE": "Detalle", "PDF": "Informe e IA"}.get(c.vista, "Resumen")
-                for nombre, pestana in zip(nombres, st.tabs(nombres, default=inicial)):
+                nombres = ["Resumen", "Alternativas", "Indicadores", "Gráficos", "Detalle", "Simular", "Informe e IA"]
+                pestanas = st.tabs(nombres, key="pestana_analisis", on_change=cambiar_pestana, args=(c,))
+                for nombre, pestana in zip(nombres, pestanas):
                     with pestana:
                         # Acota también las tablas y formularios largos a su panel.
                         with st.container(height=480, border=False, key="panel_" + nombre):
@@ -403,8 +416,11 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                             if nombre in ("Resumen", "Indicadores"):
                                 mostrar_riesgo(c, vm, detalle=nombre == "Indicadores")
                             if c.flujo.etapa == "RESULTADOS" and not c.pendiente:
-                                resultados(c, nombre)
-                            elif nombre in ("Detalle", "Simular", "Informe e IA"):
+                                if nombre == "Alternativas":
+                                    mostrar_alternativas(c)
+                                else:
+                                    resultados(c, nombre)
+                            elif nombre in ("Alternativas", "Detalle", "Simular", "Informe e IA"):
                                 st.info("Confirma los datos de la evaluación para habilitar esta sección.")
     if c.vista == "ESTRATEGIA":
         st.caption("Comparación tecnológica independiente de esta evaluación crediticia")

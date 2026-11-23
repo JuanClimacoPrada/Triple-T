@@ -14,7 +14,7 @@ def formato(valor):
     return str(valor)
 
 
-def generar_pdf(expediente, resultado, escenarios=(), config=None):
+def generar_pdf(expediente, resultado, escenarios=(), config=None, *, alternativas=None, seleccion=None, base=None):
     try:
         from reportlab.lib import colors
         from reportlab.lib.styles import getSampleStyleSheet
@@ -82,6 +82,54 @@ def generar_pdf(expediente, resultado, escenarios=(), config=None):
         story.append(p("; ".join(f"{k}: " + (f"{v:.2%}" if k in ("dti_total", "discrepancia_relativa") and v is not None else formato(v)) for k, v in escenario.cifras.items())))
         for supuesto in escenario.supuestos:
             story.append(p(supuesto))
+    if alternativas is not None:
+        from servicios.alternativas import PESOS, VERSION_PONDERACION
+
+        story.append(PageBreak())
+        titulo("Alternativas crediticias del expediente base")
+        if base is not None:
+            story.append(p(f"Base: S/ {formato(base.monto)}, {formato(base.meses)} meses, TEA {formato(base.tea)}%. Ingreso admisible sin caída: S/ {formato(alternativas.base.cifras.get('ingresos_admisibles'))}."))
+        story.append(p("Índice académico de alternativas de 0 a 100. Promedio simple de escenarios sin probabilidades asignadas. El DTI y el saldo miden aspectos relacionados."))
+        story.append(p("Pesos: " + ", ".join(f"{k} {v:.0%}" for k, v in PESOS.items()) + "."))
+        escala = alternativas.escala
+        story.append(p(f"Ponderación {VERSION_PONDERACION}. DTI: 100 puntos hasta {alternativas.umbral_dti:.2%}, cero desde {escala.dti_minimo:.2%}. Saldo objetivo: {escala.saldo_objetivo:.2%} del ingreso admisible base. Intereses: cero puntos desde {escala.intereses_minimo:.2%} del monto financiado."))
+        story.append(p("Resistencia: proporción de escenarios que cumplen DTI y saldo no negativo. Cobertura: monto financiado dividido por monto solicitado, con un máximo de 100 puntos."))
+        story.append(p(alternativas.recomendacion))
+        if seleccion is None:
+            story.append(p("Alternativa seleccionada: pendiente."))
+        else:
+            story.append(p(f"Alternativa {seleccion.codigo} seleccionada | {seleccion.fecha.isoformat(timespec='seconds')} | Revisión {seleccion.revision}"))
+            story.append(p(f"Justificación del analista: {seleccion.justificacion}"))
+        for evaluacion in alternativas.alternativas:
+            a = evaluacion.alternativa
+            titulo(f"Alternativa {a.codigo} | S/ {formato(a.monto)} | {formato(a.meses)} meses | TEA supuesta {formato(a.tea)}%")
+            estado_puntuacion = "Puntuación pendiente" if evaluacion.puntaje_global is None else f"{formato(evaluacion.puntaje_global)}/100"
+            story.append(p(f"Promedio académico: {estado_puntuacion}." + (" Evaluación preliminar; revisar la evidencia disponible." if evaluacion.preliminar else "")))
+            if evaluacion.motivo_pendiente:
+                story.append(p(evaluacion.motivo_pendiente))
+            if evaluacion.favorable and evaluacion.desfavorable:
+                story.append(p(f"Por saldo mensual, más favorable: {evaluacion.favorable.nombre}. Más desfavorable: {evaluacion.desfavorable.nombre}."))
+            for consecuencia in evaluacion.consecuencias:
+                story.append(p(consecuencia))
+            for s in evaluacion.escenarios:
+                r = s.resultado
+                titulo(f"{a.codigo} · {s.nombre} | Caída de ingreso supuesta: {formato(s.caida)}%")
+                filas = [["Indicador", "Valor"]]
+                for clave, etiqueta in (("cuota_base", "Cuota base"), ("cargos_mensuales", "Cargos mensuales"),
+                                        ("cargos_iniciales", "Cargos iniciales"), ("pago_mensual_total", "Pago mensual"),
+                                        ("dti_total", "Endeudamiento total"), ("saldo_post_cuota", "Saldo disponible"),
+                                        ("capacidad_neta", "Capacidad neta"), ("intereses", "Intereses totales"),
+                                        ("total_pagos", "Total de pagos")):
+                    valor = r.cifras.get(clave)
+                    filas.append([etiqueta, f"{valor:.2%}" if clave == "dti_total" and valor is not None else formato(valor)])
+                filas.extend([["TCEA referencial", f"{r.tcea:.2%}" if r.tcea is not None else "Pendiente"],
+                              ["Puntuación del escenario", formato(s.puntaje)]])
+                tabla(filas, [255, 255])
+                story.append(p("Componentes (0–100): " + ", ".join(f"{k} {formato(v)}" for k, v in s.componentes.items())))
+                for alerta in r.reglas:
+                    story.append(p(alerta["mensaje"]))
+                for supuesto in r.supuestos:
+                    story.append(p(supuesto))
     story.append(PageBreak())
     titulo("Cronograma (S/)")
     filas = [["Mes", "Inicial", "Base", "Interés", "Capital", "Cargos", "Total", "Final"]]
