@@ -117,6 +117,13 @@ def recibir_guiado(c, texto):
     if c.pendiente:
         decir(c, "Confirma o cancela la modificación pendiente antes de continuar.")
         return
+    if t in ("alternativas", "comparar alternativas del credito", "ver alternativas del credito"):
+        from experiencia.comparador import accion_semantica
+        try:
+            decir(c, accion_semantica(c, "COMPARAR", {}, {}))
+        except ValueError as error:
+            decir(c, str(error))
+        return
     if t in ("hola", "buenas", "buenos dias", "buenas tardes", "buenas noches"):
         decir(c, "Hola, soy Triple-T. Puedo guiarte en una evaluación crediticia. ¿Iniciamos una solicitud o prefieres simular condiciones?")
         return

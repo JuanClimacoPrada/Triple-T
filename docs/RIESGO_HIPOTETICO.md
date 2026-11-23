@@ -63,10 +63,11 @@ versiones; no hay entrenamiento ni umbrales de desempeño inventados en esta ent
 
 ## Privacidad y validación
 
-Gemini recibe únicamente un tema de lista cerrada y los hechos numéricos/canónicos
-permitidos por `hechos()`. No recibe el texto libre de la pregunta, notas, OCR,
-nombres de archivos, score simulado ni supuestos probabilísticos. Se mantienen el
-consentimiento, la confirmación del análisis, los límites de llamadas y el modo local.
+Desde la actualización semántica, Gemini recibe la pregunta de demostración
+tras controles de privacidad y hechos permitidos con consentimiento explícito.
+Las notas, OCR, nombres de archivos, score simulado y supuestos probabilísticos
+quedan en la sesión. Se mantienen los límites y el modo local.
+[Configuración y privacidad](ALTERNATIVAS_CREDITO.md).
 
 La suite incluye cálculos extremos, valores no finitos, horizonte obligatorio,
 fuentes fijas, fecha/escala/confirmación de score, proveedor deshabilitado, enlace

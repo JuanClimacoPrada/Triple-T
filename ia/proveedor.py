@@ -63,9 +63,10 @@ class Gemini:
     def __init__(self, config):
         self.config = config
 
-    def explicar(self, mensaje, hechos):
-        from experiencia.ayuda_ia import INSTRUCCION, ESQUEMA_EXPLICACION
-        if len(mensaje) > 2000 or len(json.dumps(hechos, ensure_ascii=False)) > 8000:
+    def interpretar(self, mensaje, contexto):
+        from ia.contrato_semantico import INSTRUCCION_SEMANTICA, ESQUEMA_SEMANTICO
+        from ia.privacidad import consulta_remota_admisible
+        if not consulta_remota_admisible(mensaje) or len(json.dumps(contexto, ensure_ascii=False)) > 24000:
             raise ErrorProveedor("SOLICITUD")
         if not self.config.disponible:
             raise ValueError("Configuración IA incompleta.")
@@ -84,9 +85,9 @@ class Gemini:
             async with genai.Client(api_key=self.config.api_key, vertexai=False, http_options=http).aio as client:
                 respuesta = await asyncio.wait_for(client.models.generate_content(
                     model=self.config.modelo,
-                    contents=json.dumps({"pregunta_sintetica": mensaje, "facts": hechos}, ensure_ascii=False),
-                    config=types.GenerateContentConfig(system_instruction=INSTRUCCION, temperature=0,
-                        max_output_tokens=1024, response_mime_type="application/json", response_json_schema=ESQUEMA_EXPLICACION,
+                    contents=json.dumps({"pregunta_sintetica": mensaje, "contexto": contexto}, ensure_ascii=False, allow_nan=False),
+                    config=types.GenerateContentConfig(system_instruction=INSTRUCCION_SEMANTICA, temperature=0,
+                        max_output_tokens=2048, response_mime_type="application/json", response_json_schema=ESQUEMA_SEMANTICO,
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))), timeout=15)
                 return respuesta.text
         try:

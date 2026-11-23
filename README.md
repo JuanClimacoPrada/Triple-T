@@ -1,5 +1,12 @@
 # Triple-T — asistente académico de análisis crediticio
 
+## Alternativas de un mismo crédito
+
+La pestaña **Alternativas** calcula tres condiciones de préstamo bajo tres
+escenarios editables de ingreso. Muestra consecuencias, alertas y puntuación
+ponderada. La elección del analista y su justificación se incorporan al PDF.
+[Flujo, ponderación y verificación](docs/ALTERNATIVAS_CREDITO.md).
+
 ## Riesgo hipotético y Sentinel
 
 «Evaluación del riesgo crediticio» separa capacidad financiera de los supuestos
@@ -28,10 +35,10 @@ revisar fuentes y confirmar antes de calcular. Las tarjetas muestran cuota, DTI,
 disponible y estado de revisión. Escenarios, gráficos, cronograma y PDF reutilizan
 el motor Python. Solo crédito personal en PEN.
 
-**Toda la captura y el procesamiento documental funcionan sin Gemini.** La IA se
-ofrece únicamente después de confirmar datos y obtener resultados, mediante
-«Preguntar a la IA sobre este análisis». Solo selecciona explicaciones desde hechos
-calculados; no edita expedientes, valida documentos ni decide créditos.
+**Toda la captura y el procesamiento documental funcionan sin Gemini.** Desde
+el chat se puede activar Gemini para interpretar consultas de demostración
+durante la captura y el análisis. Python valida entidades, calcula los
+indicadores y pide confirmación para aplicar cambios propuestos.
 
 Los archivos se procesan en el **servidor** de Triple-T. En Community Cloud no es
 el equipo del usuario. Solo se permiten documentos de demostración sin identificadores.
@@ -42,14 +49,12 @@ ingreso ni garantías. La confirmación es de transcripción, nunca de autentici
 la aplicación. `GEMINI_ENABLED=false` deshabilita las consultas remotas. No se agregan
 dependencias ni servicios de pago. [Arquitectura, matriz y guía manual del Sprint 5](docs/SPRINT_5.md).
 
-Por indicación del usuario, esta entrega no ejecuta pruebas ni llamadas reales a
-Gemini: la validación, capturas y regresión quedan pendientes de su revisión.
-
 ## Configuración opcional de Gemini
 
-Gemini selecciona hechos del análisis mediante JSON validado localmente. La respuesta
-se ensambla con plantillas de Python. Sin configuración o consentimiento se ofrecen
-explicaciones locales. El enrutamiento de captura del Sprint 4 queda sustituido.
+Gemini interpreta la consulta filtrada y devuelve intenciones, referencias,
+entidades y explicaciones en JSON. Python valida el esquema y resuelve los
+datos de la explicación con los resultados del motor. El modo local está
+disponible siempre.
 
 1. Instala `requirements.txt` y ejecuta Streamlit como se indica abajo.
 2. El responsable verifica el nivel gratuito de su cuenta en
@@ -60,9 +65,9 @@ explicaciones locales. El enrutamiento de captura del Sprint 4 queda sustituido.
    Define `GEMINI_API_KEY`, `GEMINI_MODEL` y `GEMINI_FREE_TIER_CONFIRMED = true`
    únicamente tras verificar acceso gratuito. También se admiten variables de entorno.
    No compartas la clave en chat, GitHub, capturas ni informes.
-4. Tras confirmar los datos y obtener resultados, abre «Preguntar a la IA sobre este
-   análisis», lee el aviso, consiente y activa las preguntas. «Seguir sin IA» vuelve
-   al flujo local. Los cambios de datos invalidan esta activación.
+4. Abre «Gemini opcional» en el chat, lee el aviso, consiente y activa Gemini.
+   «Seguir sin IA» vuelve al flujo local. Al reiniciar un caso se solicita el
+   consentimiento de nuevo.
    Configuración disponible no significa conexión probada: el panel indica si Gemini
    ya respondió en la sesión y muestra un motivo seguro cuando falla.
 
@@ -166,7 +171,7 @@ Si prefieres activar un entorno virtual, puedes usar CMD o PowerShell y luego `p
 
 ## Límites metodológicos
 
-- **No hay Machine Learning entrenado ni IA generativa** en esta versión: es un chatbot conversacional guiado por reglas y cálculos. Las alternativas B/C modelan inversiones hipotéticas, NO simulan la precisión real de un modelo inexistente.
+- Triple-T usa reglas y cálculos deterministas para sus indicadores financieros. Gemini es opcional y cumple una función conversacional. Las alternativas B/C del módulo estratégico modelan inversiones hipotéticas. El proyecto carece de un modelo predictivo de riesgo entrenado y calibrado.
 - El **30% de cuota/ingreso** y las reglas de mora/estabilidad vienen del ejemplo académico del equipo y NO son políticas oficiales del BCP.
 - La PD se puede introducir como **supuesto** para ilustrar `Pérdida esperada = EAD × PD × LGD`; no se estima ni valida aquí.
 - Costos, tiempos y rentabilidad del análisis estratégico son totalmente hipotéticos. Las horas liberadas no garantizan ahorros monetarios.
