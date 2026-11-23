@@ -85,13 +85,13 @@ contrato y el flujo de Triple-T. [Referencia del SDK para salida estructurada](h
 
 ## Trazabilidad con la Ficha N.° 16
 
-| Paso y requisito | Implementación | Evidencia local |
-| --- | --- | --- |
-| 2. Variables del caso y calidad de evidencia | `servicios/reglas.py`, `servicios/simulacion.py` | Suite financiera y casos de planilla, documentos y cargos |
-| 3. Tres condiciones de préstamo y nueve escenarios | `servicios/alternativas.py`, `ui_alternativas.py` | Pruebas de matriz, edición, límites y expediente inmutable |
-| 4. Puntuación y escenarios de estrés | `servicios/alternativas.py` | Pesos, valores extremos, DTI N/D, alertas y recomendación |
-| 5. Consecuencias, decisión del analista y PDF | `experiencia/comparador.py`, `servicios/reporte.py` | Integración de Streamlit para elección, edición y PDF |
-| Conversación transversal y privacidad | `experiencia/ayuda_ia.py`, `ia/contrato_semantico.py`, `ia/privacidad.py` | Pruebas de proveedor simulado, confirmación y recuperación local |
+| Paso y requisito | Implementación | Evidencia local | Estado |
+| --- | --- | --- | --- |
+| 2. Variables del caso y calidad de evidencia | `servicios/reglas.py`, `servicios/simulacion.py` | Suite financiera y casos de planilla, documentos y cargos | Verificado |
+| 3. Tres condiciones de préstamo y nueve escenarios | `servicios/alternativas.py`, `ui_alternativas.py` | Pruebas de matriz, edición, límites y expediente inmutable | Verificado |
+| 4. Puntuación y escenarios de estrés | `servicios/alternativas.py` | Pesos, valores extremos, DTI N/D, alertas y recomendación | Verificado |
+| 5. Consecuencias, decisión del analista y PDF | `experiencia/comparador.py`, `servicios/reporte.py` | Integración de Streamlit para elección, edición y PDF | Verificado |
+| Conversación transversal y privacidad | `experiencia/ayuda_ia.py`, `ia/contrato_semantico.py`, `ia/privacidad.py` | Pruebas de proveedor simulado, confirmación y recuperación local | Contrato local verificado. Comprensión remota pendiente |
 
 La suite local ejecutó **104 pruebas satisfactorias** con
 `python -m unittest discover -s tests -v` y `GEMINI_ENABLED=false`.
