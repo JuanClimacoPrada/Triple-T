@@ -156,6 +156,60 @@ def _porcentaje(x):
     return f"{x:.2%}"
 
 
+def interpretar_saldo(resultado):
+    """Explica el saldo del motor sin inferir una decisión de crédito."""
+    saldo = resultado.cifras.get("saldo_post_cuota")
+    if saldo is None:
+        return "Para estimar el saldo se necesitan el ingreso admisible, los gastos, las cuotas existentes y el nuevo pago."
+    if saldo < 0:
+        return (f"Después de gastos y cuotas faltarían {_moneda(abs(saldo))} al mes. "
+                "En este escenario el flujo mensual no alcanza para cubrir todos los pagos.")
+    if saldo == 0:
+        return "El flujo mensual alcanzaría para cubrir los gastos y las cuotas, sin margen disponible."
+    pendiente_evidencia = any(a["regla"] in ("RN-04", "RN-05", "VAL-05/07") for a in resultado.reglas)
+    evidencia = " Revisa también las alertas de sustento de ingresos." if pendiente_evidencia else ""
+    return (f"Después de cubrir los gastos y las cuotas quedarían {_moneda(saldo)} al mes. "
+            "El flujo mensual calculado alcanza para cubrir el nuevo pago en este escenario." + evidencia)
+
+
+def efectos_principales(evaluacion, base):
+    """Destaca un beneficio y un costo o riesgo medido en esta opción."""
+    esperado = evaluacion.escenarios[1].resultado.cifras
+    pago, pago_base = esperado.get("pago_mensual_total"), base.cifras.get("pago_mensual_total")
+    intereses, intereses_base = esperado.get("intereses"), base.cifras.get("intereses")
+    saldo = esperado.get("saldo_post_cuota")
+    if pago is not None and pago_base is not None and pago < pago_base:
+        beneficio = f"Reduce el pago mensual en {_moneda(pago_base - pago)}."
+    elif intereses is not None and intereses_base is not None and intereses < intereses_base:
+        beneficio = f"Reduce los intereses totales en {_moneda(intereses_base - intereses)}."
+    elif saldo is not None and saldo > 0:
+        beneficio = f"Deja {_moneda(saldo)} al mes en el escenario esperado."
+    elif evaluacion.cobertura == 1:
+        beneficio = "Cubre todo el monto solicitado."
+    else:
+        beneficio = "Completa las condiciones para estimar el beneficio."
+
+    desfavorable = evaluacion.desfavorable
+    peor_saldo = desfavorable.resultado.cifras.get("saldo_post_cuota") if desfavorable else None
+    if evaluacion.cobertura is not None and evaluacion.cobertura < 1:
+        desventaja = f"Deja {_porcentaje(1 - evaluacion.cobertura)} del monto solicitado sin financiar."
+    elif intereses is not None and intereses_base is not None and intereses > intereses_base:
+        desventaja = f"Eleva los intereses totales en {_moneda(intereses - intereses_base)}."
+    elif peor_saldo is not None and peor_saldo < 0:
+        desventaja = f"En {desfavorable.nombre.lower()} faltarían {_moneda(abs(peor_saldo))} al mes."
+    elif pago is not None and pago_base is not None and pago > pago_base:
+        desventaja = f"Eleva el pago mensual en {_moneda(pago - pago_base)}."
+    elif desfavorable and desfavorable.resiste is False:
+        desventaja = f"En {desfavorable.nombre.lower()} supera el umbral académico de endeudamiento."
+    elif evaluacion.preliminar:
+        desventaja = "La evidencia pendiente limita la evaluación."
+    elif peor_saldo is not None:
+        desventaja = f"El margen en el escenario {desfavorable.nombre.lower()} sería de {_moneda(peor_saldo)}."
+    else:
+        desventaja = "Revisa el ingreso admisible y la información pendiente."
+    return beneficio, desventaja
+
+
 def _consecuencias(exp, a, base, escenarios, cobertura, puntaje):
     primero = escenarios[0]
     cifras = primero.resultado.cifras
@@ -248,7 +302,7 @@ def _evaluar(exp, a, base, escala, umbral, config):
                                  favorable, desfavorable, motivo, cobertura)
 
 
-def _recomendar(evaluaciones):
+def _recomendar(evaluaciones, base):
     def problematica(e):
         return any(s.resiste is False or any(a["nivel"] == "relevante" for a in s.resultado.reglas)
                    for s in e.escenarios)
@@ -267,6 +321,9 @@ def _recomendar(evaluaciones):
                f"Mayor puntuación de ese grupo: {mayor:.2f}/100.")
     if len(codigos) > 1:
         mensaje += " Hay empate en el índice. Compare los costos y la cobertura antes de elegir."
+    else:
+        beneficio, desventaja = efectos_principales(recomendadas[0], base)
+        mensaje += f" {beneficio} {desventaja}"
     return codigos, mensaje
 
 
@@ -299,5 +356,5 @@ def comparar(expediente, alternativas, config=Configuracion(), escala=EscalaPunt
         raise ValueError("Hay alternativas con el mismo monto, plazo y TEA. Ajuste sus condiciones para diferenciarlas.")
     base = analizar(expediente, config)
     evaluaciones = _comparar_componentes(tuple(_evaluar(expediente, a, base, escala, umbral, config) for a in alternativas))
-    recomendadas, recomendacion = _recomendar(evaluaciones)
+    recomendadas, recomendacion = _recomendar(evaluaciones, base)
     return Comparativa(base, evaluaciones, escala, umbral, recomendacion, recomendadas)

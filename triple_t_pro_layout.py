@@ -11,8 +11,7 @@ from urllib.parse import urlsplit
 import streamlit as st
 from conversacion.gestor import actual, resultado_para
 from experiencia.tarjetas import estado_revision
-from experiencia.evidencia import pendientes_documentales
-from experiencia.flujo import faltan
+from dominio.modelos import Resultado
 from servicios.finanzas import cronograma
 from servicios.proveedores_riesgo import SENTINEL_REFERENCIA
 
@@ -28,15 +27,6 @@ class MetricCard:
     icon: str = "wallet"
 
 
-@dataclass(frozen=True)
-class ComparisonOption:
-    opcion: str
-    tea: str
-    plazo: str
-    cuota: str
-    selected: bool = False
-
-
 @dataclass
 class TripleTViewModel:
     status_text: str = "Por comenzar"
@@ -44,17 +34,13 @@ class TripleTViewModel:
     current_step: int = 1
     metrics: list = field(default_factory=list)
     indicators: list = field(default_factory=list)
-    comparison_rows: list = field(default_factory=list)
     chart_bars: list = field(default_factory=list)
     income_breakdown: list = field(default_factory=list)
     income: Decimal | None = None
     distribution_note: str = "Completa ingresos, gastos y cuotas para ver su distribución."
-    documents_note: str = "Respaldo de ingresos pendiente"
-    score: str = "No disponible"
     sentinel_url: str | None = None
     state_label: str = "Información pendiente"
-    next_fields: list = field(default_factory=list)
-    alert: dict | None = None
+    resultado: Resultado = field(default_factory=Resultado)
 
 
 def sentinel_config(secrets=None):
@@ -94,7 +80,7 @@ def dinero(valor):
 def construir_vm(c, sentinel_url=None):
     confirmado = bool(c.flujo and c.flujo.revision_confirmada == c.revision and c.resultado is not None)
     exp, r = actual(c) if confirmado else (c.expediente, resultado_para(c, c.expediente))
-    vm = TripleTViewModel(preliminary=not confirmado, sentinel_url=url_segura(sentinel_url))
+    vm = TripleTViewModel(preliminary=not confirmado, sentinel_url=url_segura(sentinel_url), resultado=r)
     etapas = {"INICIO":1, "CONDICIONES":1, "FINANZAS":1, "HISTORIAL":1, "EVIDENCIA_INGRESOS":2,
               "EVIDENCIA_PATRIMONIO":2, "REVISION_DATOS":3, "RESULTADOS":4}
     vm.current_step = 5 if confirmado and c.escenario else etapas.get(c.flujo.etapa if c.flujo else "INICIO", 1)
@@ -102,9 +88,12 @@ def construir_vm(c, sentinel_url=None):
     cifra = r.cifras
     pago = cifra.get("pago_mensual_total", cifra.get("cuota_base"))
     dti = cifra.get("dti_total")
-    vm.metrics = [MetricCard("Cuota mensual estimada", dinero(pago), "Incluye cargos declarados" if "pago_mensual_total" in cifra else "Teórica, sin cargos", "green", "wallet"),
-        MetricCard("Endeudamiento total", "Pendiente" if dti is None else f"{dti:.1%}", "Cuotas / ingreso admisible", "blue", "chart"),
-        MetricCard("Saldo disponible mensual", dinero(cifra.get("saldo_post_cuota")), "Después de gastos y cuotas", "cyan", "layers")]
+    detalle_pago = "Con los cargos mensuales registrados" if "pago_mensual_total" in cifra else "Capital e interés"
+    if pago is None:
+        detalle_pago = "Requiere monto, plazo y TEA válidos"
+    vm.metrics = [MetricCard("Cuota mensual estimada", dinero(pago), detalle_pago, "blue", "wallet"),
+        MetricCard("Endeudamiento total (DTI)", "Pendiente" if dti is None else f"{dti:.1%}", f"Umbral académico {c.config.umbral_dti:.0%}", "blue", "chart"),
+        MetricCard("Saldo después del pago", dinero(cifra.get("saldo_post_cuota")), "Ingreso, gastos y cuotas del caso", "cyan", "layers")]
     vm.metrics.insert(1, MetricCard("Capacidad de pago mensual", dinero(cifra.get("capacidad_neta")), "Ingreso menos gastos y otras cuotas; mínimo cero", "cyan", "wallet"))
     ingreso = cifra.get("ingresos_admisibles")
     carga = pago / ingreso if pago is not None and ingreso is not None and ingreso > 0 else None
@@ -119,15 +108,8 @@ def construir_vm(c, sentinel_url=None):
         ("Intereses totales", dinero(cifra.get("intereses"))),
         ("TCEA referencial", "Pendiente" if r.tcea is None else f"{r.tcea:.2%}"),
     ]
-    vm.documents_note = "; ".join(pendientes_documentales(c)) or "Transcripciones confirmadas · autenticidad no verificada"
     vm.state_label = estado_revision(c, r)
-    vm.next_fields = faltan(c) if c.flujo else []
-    vm.alert = next((a for a in sorted(r.reglas, key=lambda a: {"discrepancia":0,"relevante":1,"pendiente":2}.get(a["nivel"],3))), None)
     if "cuota_base" in cifra:
-        base_r = c.resultado if confirmado else r
-        vm.comparison_rows.append(ComparisonOption("Base", f"{c.expediente.tea}%", f"{c.expediente.meses} m", dinero(base_r.cifras.get("cuota_base")), not bool(c.escenario and confirmado)))
-        if confirmado and c.escenario:
-            vm.comparison_rows.append(ComparisonOption("Escenario", f"{exp.tea}%", f"{exp.meses} m", dinero(cifra.get("cuota_base")), True))
         # Comparación teórica a la misma tasa: no crea ofertas ni altera el expediente.
         for meses in sorted(set(min(360, exp.meses + incremento) for incremento in (0, 12, 24))):
             cuota, _ = cronograma(exp.monto, meses, exp.tea)
@@ -183,12 +165,6 @@ def cards_html(cards):
     return '<div class="tt-metrics">'+''.join(f'<article class="tt-card {c.accent if c.accent in ("green","blue","cyan") else "blue"}"><div class="tt-card-label">{icon(c.icon)}<span>{escape(c.label)}</span></div><strong>{escape(c.value)}</strong><small>{escape(c.subtitle)}</small></article>' for c in cards)+'</div>'
 
 
-def comparison_html(rows):
-    if not rows:
-        return '<p class="tt-empty">Las condiciones aparecerán al indicar monto, plazo y TEA.</p>'
-    return '<table class="tt-table"><thead><tr><th>Opción</th><th>TEA</th><th>Plazo</th><th>Cuota base</th></tr></thead><tbody>'+''.join('<tr'+(' class="selected"' if r.selected else '')+'>'+''.join('<td>'+escape(v)+'</td>' for v in (r.opcion,r.tea,r.plazo,r.cuota))+'</tr>' for r in rows)+'</tbody></table>'
-
-
 def bars_html(data):
     valores = [(str(k),float(v)) for k,v in data if math.isfinite(float(v)) and v >= 0]
     if not valores:
@@ -212,9 +188,14 @@ def donut_html(vm):
     return f'<div class="tt-donut" style="background:conic-gradient({",".join(segmentos)})"><div><strong>{escape(dinero(vm.income))}</strong><span>Ingreso admisible</span></div></div><ul class="tt-legend">'+''.join(leyenda)+'</ul>'
 
 
+def sentinel_link_html(url):
+    seguro = url_segura(url)
+    return f'<a class="tt-sentinel-link" href="{escape(seguro, quote=True)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Consultar portal externo de Sentinel</a>' if seguro else ''
+
+
 def score_html(url):
     seguro = url_segura(url)
-    link = f'<a class="tt-sentinel-link" href="{escape(seguro, quote=True)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Consultar Sentinel ↗</a>' if seguro else '<span class="tt-sentinel-link disabled" aria-disabled="true">Consultar Sentinel ↗</span>'
+    link = sentinel_link_html(seguro) or '<span class="tt-sentinel-link disabled" aria-disabled="true">Consultar Sentinel</span>'
     return '<div class="tt-score"><div><span>Score crediticio</span><strong>No disponible</strong></div>'+link+'<small>'+('Servicio externo. No se envía información del expediente.' if seguro else 'Consulta externa pendiente de configuración por el responsable.')+'</small></div>'
 
 
@@ -223,11 +204,12 @@ def section_title(label, name="file"):
 
 
 def render_dashboard_area(vm, seccion="Resumen"):
-    st.caption("Vista preliminar · confirma los datos antes de emitir el análisis" if vm.preliminary else "Resultados del motor · para revisión humana")
     if seccion == "Indicadores":
         section_title("Indicadores clave", "chart")
-        st.dataframe([{"Indicador": k, "Valor": v} for k, v in vm.indicators], hide_index=True, use_container_width=True)
-        st.caption("Capacidad neta = máximo entre cero e ingreso admisible menos gastos y otras cuotas. Capacidad con umbral = mínimo de esa disponibilidad y el margen del umbral DTI, limitado a cero. Son referencias académicas, no límites aprobados por una entidad.")
+        st.markdown(cards_html(vm.metrics[1:]), unsafe_allow_html=True)
+        with st.expander("Cifras adicionales y criterios"):
+            st.dataframe([{"Indicador": k, "Valor": v} for k, v in vm.indicators], hide_index=True, width="stretch")
+            st.caption("La capacidad neta es el ingreso disponible después de gastos y cuotas existentes. La capacidad con umbral aplica además el margen académico de endeudamiento.")
         return
     if seccion == "Gráficos":
         section_title("Cuota por plazo", "chart")
@@ -236,10 +218,8 @@ def render_dashboard_area(vm, seccion="Resumen"):
         section_title("Uso del ingreso", "wallet")
         st.markdown(donut_html(vm), unsafe_allow_html=True)
         return
+    section_title("Resumen del caso", "file")
+    if vm.preliminary:
+        st.caption("Vista preliminar. Confirma el expediente para comparar alternativas.")
     st.markdown(cards_html(vm.metrics), unsafe_allow_html=True)
     st.markdown('<div class="tt-review"><span>Estado de la evaluación</span><strong>'+escape(vm.state_label)+'</strong></div>', unsafe_allow_html=True)
-    section_title("Comparación de condiciones", "scale")
-    st.markdown(comparison_html(vm.comparison_rows), unsafe_allow_html=True)
-    with st.expander("Documentación pendiente", expanded=False):
-        st.write(vm.documents_note)
-        st.caption("Presentar o transcribir no verifica autenticidad ni titularidad.")

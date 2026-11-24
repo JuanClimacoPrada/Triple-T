@@ -74,6 +74,7 @@ class Expediente:
     patrimonio_fuente: str = "Declarado; verificación pendiente"
     observacion: str = ""
     origen_campos: tuple[tuple[str, str], ...] = ()
+    origen_fechas_pago: str | None = None
 
 
 @dataclass(frozen=True)
@@ -98,3 +99,4 @@ class Resultado:
         "Cargos introducidos como supuestos; no inferidos de tarifas bancarias.",
         "TCEA referencial: flujos fechados del prestatario, año de 365 días; no costo regulatorio definitivo.",
     ])
+    pendientes_tcea: tuple[str, ...] = ()

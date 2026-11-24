@@ -8,7 +8,8 @@ su propia evaluación y sus nueve resultados.
 ## Flujo del analista
 
 1. Completa la captura guiada y confirma el caso. También puedes cargar el caso
-   sintético Esperado desde Herramientas avanzadas y registrar los pendientes.
+   sintético Esperado desde Desarrollo en una sesión local con
+   `TRIPLE_T_HERRAMIENTAS_DEV=true` y registrar los pendientes.
 2. Abre **Alternativas**. A parte de las condiciones del expediente, B duplica
    el plazo hasta 360 meses y C parte del 80% del monto, a céntimos. Si el límite
    impide diferenciar alguna opción, completa sus condiciones en el editor.
@@ -22,7 +23,7 @@ su propia evaluación y sus nueve resultados.
    escribe una justificación breve sin datos personales. Confirma o cancela.
    El registro guarda la revisión, hora de Lima, condiciones, supuestos,
    evaluación y justificación dentro de la sesión.
-5. Abre **Informe e IA** y prepara el PDF. Incluye las nueve combinaciones,
+5. Abre **Informe** y prepara el PDF. Incluye las nueve combinaciones,
    ponderación, consecuencia comparativa, recomendación y elección vigente.
    Una edición del caso, de costos, de evidencia o de la matriz invalida la
    elección y el informe. También se comprueba la versión de reglas y ponderación.

@@ -1,6 +1,7 @@
 """Regresión UI del flujo guiado, panel de riesgo y funciones financieras."""
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 try:
     from streamlit.testing.v1 import AppTest
 except ImportError:
@@ -8,6 +9,7 @@ except ImportError:
 
 
 @unittest.skipIf(AppTest is None, "Instalar requirements.txt para probar Streamlit")
+@patch.dict("os.environ", {"TRIPLE_T_HERRAMIENTAS_DEV": "true", "GEMINI_ENABLED": "false"})
 class TestApp(unittest.TestCase):
     def iniciar(self):
         return AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
@@ -26,14 +28,20 @@ class TestApp(unittest.TestCase):
         self.boton(app, "No declara bienes")
         self.boton(app, "Confirmar y calcular")
 
+    def cargar_caso(self, app, caso="Esperado"):
+        self.boton(app, "Desarrollo")
+        app.button(key="caso_" + caso).click().run()
+        self.assertFalse(app.exception)
+
     def test_inicio_incompleto_y_escenarios(self):
         app = self.iniciar()
         self.assertFalse(app.exception)
         self.assertEqual(len(app.chat_input), 1)
         self.assertEqual(len(app.tabs), 7)
-        self.boton(app, "Comparación estratégica A/B/C")
+        self.boton(app, "Desarrollo")
         estrategia = next(d.value for d in app.dataframe if "Alternativa" in d.value.columns)
         self.assertEqual(len(estrategia), 9)
+        self.boton(app, "Análisis crediticio")
         c = self.enviar(app, "qué falta")
         self.assertEqual(c.campo_preguntado, "monto")
         self.assertIn("monto de financiamiento", c.mensajes[-1].texto)
@@ -41,7 +49,7 @@ class TestApp(unittest.TestCase):
     def test_casos_y_pd_sin_valores_inventados(self):
         for caso, monto in (("Optimista", 2000), ("Esperado", 10000), ("Pesimista", 20000)):
             app = self.iniciar()
-            app.button(key="caso_" + caso).click().run()
+            self.cargar_caso(app, caso)
             self.assertFalse(app.exception)
             self.assertTrue(all(n.value is None for n in app.number_input if n.label == "PD supuesta (%)"))
             self.assertEqual(app.session_state["conversacion"].expediente.monto, monto)
@@ -50,7 +58,7 @@ class TestApp(unittest.TestCase):
         app = self.iniciar()
         c = self.enviar(app, "ingreso NaN")
         self.assertIsNone(c.expediente.ingreso)
-        app.button(key="caso_Esperado").click().run()
+        self.cargar_caso(app)
         self.boton(app, "Confirmar acción")
         self.boton(app, "Nueva evaluación")
         self.assertEqual(app.session_state["conversacion"].expediente.monto, 10000)
@@ -59,7 +67,7 @@ class TestApp(unittest.TestCase):
 
     def test_simulacion_modificable_y_productos(self):
         app = self.iniciar()
-        app.button(key="caso_Esperado").click().run()
+        self.cargar_caso(app)
         self.confirmar_caso(app)
         c = self.enviar(app, "¿Y a 24 meses con TEA 0%?")
         self.assertEqual(c.expediente.meses, 12)
@@ -95,6 +103,7 @@ class TestApp(unittest.TestCase):
 
     def test_escenario_riesgo_horizonte_y_limpieza(self):
         app = self.iniciar()
+        self.boton(app, "Desarrollo")
         revision = app.session_state["conversacion"].revision
         app.number_input(key=f"pd_Esperado_{revision}").set_value(2.5)
         self.boton(app, "Guardar escenario esperado")
@@ -108,11 +117,14 @@ class TestApp(unittest.TestCase):
         self.assertEqual(float(e.no_incumplimiento), 97.5)
         self.assertEqual(float(e.perdida_esperada), 112.5)
         self.assertIsNone(app.session_state["conversacion"].expediente.monto)
+        self.boton(app, "Análisis crediticio")
         self.enviar(app, "monto 5000")
+        self.boton(app, "Desarrollo")
         self.assertIsNone(app.session_state["riesgo_demo"]["escenarios"]["Esperado"].pd)
 
     def test_score_simulado_confirmacion_y_eliminacion(self):
         app = self.iniciar()
+        self.boton(app, "Desarrollo")
         revision = app.session_state["conversacion"].revision
         app.number_input(key=f"score_valor_{revision}").set_value(400)
         app.number_input(key=f"score_escala_{revision}").set_value(1000)
@@ -127,7 +139,7 @@ class TestApp(unittest.TestCase):
 
     def test_reporte_y_modificacion_base(self):
         app = self.iniciar()
-        app.button(key="caso_Esperado").click().run()
+        self.cargar_caso(app)
         self.confirmar_caso(app)
         c = self.enviar(app, "¿Qué pasa si baja el ingreso 20%?")
         self.assertEqual(c.expediente.ingreso, 3500)
@@ -140,6 +152,34 @@ class TestApp(unittest.TestCase):
         self.assertIsNone(c.informe)
         self.boton(app, "Confirmar y calcular")
         self.assertIsNone(c.resultado.cifras["dti_total"])
+
+    def test_navegacion_operativa_y_diagnostico_costos(self):
+        app = self.iniciar()
+        self.cargar_caso(app)
+        self.confirmar_caso(app)
+        self.assertFalse(any("Guardar escenario esperado" == b.label for b in app.button))
+        self.assertFalse(any("Comparación estratégica" in b.label for b in app.button))
+        self.assertFalse(any("Cargar caso" in b.label for b in app.button))
+        self.assertTrue(any("fecha de desembolso" in t.value for t in app.text))
+        app.button(key="costos_tcea").click().run(timeout=30)
+        self.assertFalse(app.exception)
+        self.assertEqual(app.session_state["pestana_analisis"], "Detalle")
+        self.assertIsNotNone(next((b for b in app.button if b.label == "Guardar costos y fechas"), None))
+
+    @patch.dict("os.environ", {"TRIPLE_T_HERRAMIENTAS_DEV": "false", "GEMINI_ENABLED": "true"})
+    def test_consentimiento_en_configuracion_y_vigente_al_volver(self):
+        app = self.iniciar()
+        self.assertFalse(any(b.label == "Desarrollo" for b in app.button))
+        self.assertFalse(any("Consiento" in w.label for w in app.checkbox))
+        self.boton(app, "Configuración")
+        self.assertEqual(sum("Consiento" in w.label for w in app.checkbox), 1)
+        app.checkbox(key="consentimiento_gemini").set_value(True).run()
+        self.boton(app, "Análisis crediticio")
+        c = self.enviar(app, "hola")
+        self.assertIn("hola", c.mensajes[-1].texto.lower())
+        self.assertEqual(app.session_state["ia"].llamadas, 0)
+        self.boton(app, "Configuración")
+        self.assertTrue(app.checkbox(key="consentimiento_gemini").value)
 
 
 if __name__ == "__main__":

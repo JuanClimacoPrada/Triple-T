@@ -5,11 +5,13 @@ from decimal import Decimal
 from dominio.modelos import VERSION_REGLAS
 from conversacion.intenciones import interpretar, normalizar
 from ia.privacidad import consulta_remota_admisible, contexto_minimo, mensaje_admisible
-from ia.proveedor import Gemini, ErrorProveedor
+from ia.proveedor import Gemini, ErrorProveedor, diagnostico_sdk, registrar_diagnostico
 from ia.politicas import ERRORES
 from experiencia.flujo import faltan, siguiente
 from experiencia.preguntas import ETIQUETAS, PREGUNTAS, TITULOS, legible
 from ia.contrato_semantico import ACCIONES, validar_respuesta
+from servicios.alternativas import interpretar_saldo
+from servicios.costos import CATEGORIAS, diagnostico_tcea
 
 ALERTAS = {
     "RN-01": "Solo se evalúa crédito personal en soles.",
@@ -26,8 +28,30 @@ ALERTAS = {
     "RN-09": "El patrimonio es declarado; no es ingreso líquido ni garantía constituida.",
     "RN-10": "La continuidad de ingresos requiere revisión conforme a reglas académicas.",
     "RN-11": "El historial declarado requiere atención; no es una verificación externa.",
-    "RN-13": "La TCEA exige costos y fechas completos; consulta los supuestos del cálculo.",
 }
+
+
+def estado_asistente(estado, config, *, permitido=False):
+    if not permitido:
+        return "Asistente local"
+    if estado.circuito_abierto or (estado.habilitado and (not config.disponible or diagnostico_sdk())):
+        return "Conexión no disponible · asistente local"
+    if estado.habilitado and estado.consentimiento and estado.llamadas < 20:
+        return "Gemini disponible"
+    return "Asistente local"
+
+
+def _texto_tcea(exp, resultado=None):
+    tcea = resultado.tcea if resultado else None
+    if tcea is not None:
+        return f"La TCEA calculada para los flujos confirmados es {tcea:.2%}."
+    causas = diagnostico_tcea(exp, resultado)
+    if not causas:
+        return "Confirma el expediente y calcula el flujo para obtener la TCEA."
+    return ("La TCEA está pendiente. " + " ".join(causas)
+            + " Abre «Completar costos y fechas» para revisar el flujo.")
+
+
 def disponible(c):
     from conversacion.gestor import actual
     _, r = actual(c)
@@ -53,7 +77,21 @@ def hechos(c):
         facts[k] = f"{label}: pendiente" if valor is None else f"{label}: " + (f"{valor:.2%}" if k == "dti_total" else f"{valor:,.2f}")
     facts["umbral"] = f"Umbral DTI académico configurable: {c.config.umbral_dti:.2%}; no es política bancaria."
     facts["formula_dti"] = "DTI = servicio mensual total de deuda / ingreso admisible. Las cuotas ya descontadas se consideran para evitar doble conteo."
-    facts["tcea"] = "TCEA pendiente: faltan flujos/costos completos." if r.tcea is None else f"TCEA referencial calculada: {r.tcea:.2%}"
+    facts["lectura_saldo"] = interpretar_saldo(r)
+    dti = r.cifras.get("dti_total")
+    if dti is not None:
+        umbral = c.config.umbral_dti
+        evaluacion = "supera" if dti > umbral else "está en" if dti == umbral else "está por debajo de"
+        facts["lectura_dti"] = (f"Con la nueva cuota, todas las deudas comprometerían el {dti:.2%} del ingreso admisible. "
+                                 f"El valor {evaluacion} el umbral académico de {umbral:.2%}.")
+    elif r.cifras.get("ingresos_admisibles") == 0:
+        facts["lectura_dti"] = "El ingreso admisible es cero, por lo que no se puede expresar la deuda como porcentaje del ingreso. Confirma el ingreso del escenario."
+    else:
+        facts["lectura_dti"] = "Para medir qué parte del ingreso se destina a cuotas, confirma el ingreso admisible y aclara las cuotas existentes."
+    # Los diagnósticos ordinarios incluyen nombres de categorías fijas. Evita
+    # enviar un nombre de cargo libre heredado de otra fuente.
+    facts["tcea"] = (_texto_tcea(exp, r) if all((cargo.concepto, cargo.momento) in CATEGORIAS for cargo in exp.cargos)
+                     else "Revisa los cargos y vencimientos en «Completar costos y fechas».")
     facts["pendientes"] = "Campos pendientes: " + (", ".join(faltan(c)) or "ninguno básico; revisar evidencia y alertas")
     facts["evidencia"] = f"Boletas con transcripción confirmada: {sum(e.estado == 'CONFIRMADO' for e in exp.evidencias)}. Respaldos generales presentados: {sum(e.estado != 'DESCARTADO' for e in exp.respaldos)}."
     for a in r.reglas:
@@ -74,13 +112,70 @@ def explicar_local(facts, texto=""):
         if "tcea" in t:
             return "La TCEA expresa el costo anual del crédito considerando los flujos de pagos y cargos. Confirma costos, fechas y desembolso para calcularla."
         return "Los resultados todavía no están disponibles. Completa y confirma los datos para obtener el cálculo."
-    claves = ["dti_total", "umbral", "formula_dti"] if re.search(r"dti|endeud|ingreso|compromet|deudas|sueldo", t) else ["cuota_base", "pago_mensual_total", "saldo_post_cuota"]
+    claves = ["pago_mensual_total", "lectura_saldo"]
+    if re.search(r"dti|endeud|compromet|porcentaje.*(?:sueldo|ingreso)|(?:sueldo|ingreso).*deudas", t):
+        claves = ["lectura_dti"]
+    elif re.search(r"alcanz|capacidad|saldo|plata libre|cuanto (?:queda|le queda)", t):
+        claves = ["lectura_saldo"]
     if "tcea" in t:
         claves = ["tcea"]
     if re.search(r"document|boleta|propiedad", t):
         claves = ["documentos", "evidencia"]
-    claves += [k for k in facts if k.startswith("alerta_")][:2]
-    return "\n\n".join(facts[k] for k in claves if k in facts) + "\n\n" + facts["decision"]
+    return "\n\n".join(facts[k] for k in claves if k in facts)
+
+
+def _consulta_local(c, texto, estado=None):
+    from conversacion.gestor import actual
+    from experiencia.comparador import resumen_seguro
+
+    t = normalizar(texto)
+    exp, resultado = actual(c)
+    if re.search(r"\btcea\b", t):
+        return _texto_tcea(exp, resultado if disponible(c) else None)
+    if re.search(r"\b(?:alcanz\w*|capacidad|saldo)\b|plata libre|cuanto (?:queda|le queda)", t):
+        if not disponible(c) or resultado.cifras.get("saldo_post_cuota") is None:
+            campos = [ETIQUETAS[k].lower() for k in faltan(c)
+                      if k in {"ingreso", "gastos", "otras_cuotas", "descuento_planilla", "monto", "meses", "tea"}]
+            motivo = "Completa y confirma " + ", ".join(campos) + ". " if campos else "Confirma la fuente del ingreso y los datos del expediente. "
+            return motivo + "Con estos datos, Triple-T podrá determinar cuánto queda después de los gastos y las cuotas."
+    scope = re.search(r"\b(?:opcion\w*|alternativa\w*|convien\w*|compar\w*|pesimista|optimista)\b|ganando menos|mas meses|mas cara|con cual", t)
+    if scope:
+        hechos_alternativas = resumen_seguro(c)
+        if not hechos_alternativas:
+            return "Completa y confirma el expediente para comparar las alternativas y sus escenarios de ingresos."
+        if "primera" in t and "segunda" in t:
+            return "\n\n".join(hechos_alternativas[f"{codigo}_consecuencias"] for codigo in ("A", "B"))
+        if "ganando menos" in t or "pesimista" in t:
+            return "Compara el saldo estimado bajo la caída de ingresos de cada escenario pesimista.\n\n" + "\n\n".join(
+                hechos_alternativas[f"{codigo}_pesimista"] for codigo in ("A", "B", "C"))
+        referencia = re.search(r"\b(?:alternativa|opcion)\s+([abc])\b", t)
+        anterior = (estado.contexto_semantico.get("referencia", {}).get("objetivo")
+                    if estado and estado.revision_contexto == c.revision else None)
+        codigo = referencia[1].upper() if referencia else c.alternativa_en_contexto or anterior
+        if codigo in ("A", "B", "C") and not re.search(r"convien|cual de", t):
+            return hechos_alternativas[f"{codigo}_consecuencias"]
+        if "mas meses" in t:
+            return hechos_alternativas["B_consecuencias"] + " Verifica el plazo vigente de B o prueba un plazo distinto en Simular."
+        if "mas cara" in t:
+            return "¿A cuál alternativa te refieres? Abre A, B o C para ver cómo cambian la cuota, los intereses y el costo total."
+        if "plata libre" in t or "saldo" in t:
+            return "Compara cuánto queda después de pagar los gastos y las cuotas en el escenario esperado.\n\n" + "\n\n".join(
+                hechos_alternativas[f"{codigo}_esperado"] for codigo in ("A", "B", "C"))
+        return hechos_alternativas["recomendacion_alternativas"]
+    if re.search(r"\b(?:cuota|letra|saldo|dti|capacidad|deudas|alcanz\w*)\b|plata libre", t):
+        return explicar_local(hechos(c), texto)
+    if re.fullmatch(r"explicame (?:eso|lo anterior)(?: de manera sencilla)?[.?! ]*", t.strip("¿¡ ")):
+        if estado and estado.revision_contexto == c.revision:
+            referencia = estado.contexto_semantico.get("referencia", {}).get("objetivo")
+            if referencia in ("A", "B", "C"):
+                actuales = resumen_seguro(c)
+                if actuales:
+                    return actuales[f"{referencia}_consecuencias"]
+            ids = estado.contexto_semantico.get("hechos", ())
+            tema = "dti" if any("dti" in id_hecho for id_hecho in ids) else "capacidad"
+            return explicar_local(hechos(c), tema)
+        return "¿Quieres revisar la cuota mensual, el saldo disponible o el costo de una alternativa?"
+    return None
 
 
 def _contexto(c, estado):
@@ -187,7 +282,36 @@ def _accion(c, solicitud):
     return ""
 
 
-def _modo_local(c, texto):
+def _interaccion_local(c, texto):
+    """Los saludos, agradecimientos y controles directos no usan la red."""
+    from conversacion.gestor import decir
+    from experiencia.flujo import iniciar
+
+    t = re.sub(r"[¿?¡!.,;:]", " ", normalizar(texto))
+    t = " ".join(t.split())
+    if t in {"hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "hola que tal",
+             "hola buenos dias", "hola buenas tardes", "hola buenas noches"}:
+        contestacion = "Hola. Puedo ayudarte a evaluar el préstamo y comparar opciones. " + siguiente(c)
+    elif t in {"gracias", "muchas gracias", "ok gracias", "listo gracias", "mil gracias"}:
+        contestacion = "Con gusto. Puedes seguir con el expediente o preguntarme por el resultado."
+    elif t in {"ayuda", "ayudame", "necesito ayuda", "me ayudas", "por favor ayudame"}:
+        contestacion = ("Puedo ayudarte a completar el expediente, leer la cuota y comparar alternativas. "
+                         + siguiente(c))
+    elif t in {"empecemos", "comencemos", "arranquemos", "vamos a empezar", "iniciar evaluacion"}:
+        decir(c, texto, "user")
+        if c.pendiente:
+            decir(c, "Confirma o cancela el cambio pendiente para continuar.")
+        else:
+            iniciar(c)
+        return True
+    else:
+        return False
+    decir(c, texto, "user")
+    decir(c, contestacion)
+    return True
+
+
+def _modo_local(c, texto, estado):
     from conversacion.gestor import decir, recibir
     from experiencia.comparador import accion_semantica
 
@@ -208,18 +332,27 @@ def _modo_local(c, texto):
         decir(c, texto, "user")
         decir(c, explicar_local(hechos(c), texto))
         return
+    i = interpretar(texto, c.campo_preguntado)
+    if not (c.pendiente or i.entities or i.requires_clarification or i.bloqueado) and i.intent not in {
+        "PDF", "EVIDENCIAS", "REINICIAR", "DECISION", "GRAFICO", "AMORTIZACION",
+    }:
+        respuesta = _consulta_local(c, texto, estado)
+        if respuesta:
+            decir(c, texto, "user")
+            decir(c, respuesta)
+            return
     recibir(c, texto)
 
 
-def _fallback_seguro(c, texto, motivo):
+def _fallback_seguro(c, texto, estado, motivo):
     from conversacion.gestor import decir
 
     # Una llamada fallida no delega la misma orden a un parser que pueda escribir.
     i = interpretar(texto, c.campo_preguntado)
-    if i.entities or i.intent in {"SIMULAR", "CORREGIR", "REGISTRAR", "REINICIAR", "PDF"}:
+    if i.entities or i.intent in {"CORREGIR", "REGISTRAR", "REINICIAR", "PDF"}:
         detalle = "El expediente conserva sus datos. Puedes usar los controles de captura o el simulador."
     else:
-        detalle = explicar_local(hechos(c), texto)
+        detalle = _consulta_local(c, texto, estado) or explicar_local(hechos(c), texto)
     decir(c, motivo + "\n\n" + detalle)
 
 
@@ -230,6 +363,8 @@ def responder(c, texto, estado, config, *, permitido=False, proveedor=None):
     if not mensaje_admisible(texto):
         decir(c, "No incorporé la pregunta por posible información personal o documental. Usa únicamente datos sintéticos y envía documentos desde su panel.")
         return
+    if _interaccion_local(c, texto):
+        return
     disponible_ia = (c.flujo and permitido and estado.habilitado and estado.consentimiento
                      and config.disponible and not estado.circuito_abierto and estado.llamadas < 20)
     control = normalizar(texto).strip(" ¿?¡!.\n") in {
@@ -237,24 +372,31 @@ def responder(c, texto, estado, config, *, permitido=False, proveedor=None):
         "iniciar evaluacion", "simular un prestamo", "agregar despues", "no lo se",
     }
     if c.pendiente or not disponible_ia or control:
-        _modo_local(c, texto)
+        _modo_local(c, texto, estado)
         return
     if not consulta_remota_admisible(texto):
         decir(c, "Esa consulta quedó en el modo local por privacidad y seguridad. Formula la pregunta sin copiar datos, documentos ni instrucciones externas.")
         return
 
     decir(c, texto, "user")
+    etapa = "contexto"
     try:
         contexto = _contexto(c, estado)
         estado.llamadas += 1
+        etapa = "red"
         salida = (proveedor or Gemini(config)).interpretar(texto, contexto)
+        etapa = "validacion"
         solicitudes = validar_respuesta(salida, texto, contexto["hechos"], c.campo_preguntado)
     except Exception as error:
+        seguro = error if isinstance(error, ErrorProveedor) else ErrorProveedor(
+            "CONTEXTO" if etapa == "contexto" else "RESPUESTA", etapa=etapa,
+        )
+        registrar_diagnostico(seguro)
         estado.errores += 1
         estado.circuito_abierto = True
         estado.habilitado = False
-        estado.ultimo_error = str(error) if isinstance(error, ErrorProveedor) and str(error) in ERRORES else "RESPUESTA"
-        _fallback_seguro(c, texto, ERRORES[estado.ultimo_error])
+        estado.ultimo_error = seguro.codigo
+        _fallback_seguro(c, texto, estado, ERRORES[seguro.codigo])
         return
 
     estado.respuestas_validas += 1

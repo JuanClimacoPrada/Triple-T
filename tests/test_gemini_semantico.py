@@ -135,6 +135,52 @@ class TestGeminiSemantico(unittest.TestCase):
         self.assertEqual(c.pendiente["accion"], "REINICIAR")
         self.assertEqual(c.campo_preguntado, "meses")
 
+    def test_interacciones_basicas_no_consumen_cuota(self):
+        c = nuevo(guiado=True)
+        p = ProveedorSimulado(error=ErrorProveedor("CONEXION"))
+        for pregunta in ("¡Hola!", "Muchas gracias.", "¿Ayúdame?", "Empecemos"):
+            self.conversar(c, pregunta, p)
+            self.assertEqual(c.mensajes[-2].texto, pregunta)
+            self.assertEqual(c.mensajes[-1].rol, "assistant")
+        self.assertEqual(c.campo_preguntado, "monto")
+        self.assertEqual(self.estado.llamadas, 0)
+        self.assertEqual(p.llamadas, [])
+        self.assertTrue(self.estado.habilitado)
+        self.assertFalse(self.estado.circuito_abierto)
+        self.assertEqual(self.estado.ultimo_error, "")
+
+    def test_saludo_con_pregunta_sustantiva_llega_completo(self):
+        c = caso_confirmado()
+        p = ProveedorSimulado(solicitud("EXPLICAR_RESULTADO", "{{lectura_saldo}}", hechos=("lectura_saldo",)))
+        pregunta = "Hola, ¿crees que con ese sueldo le alcanza para pagar?"
+        self.conversar(c, pregunta, p)
+        self.assertEqual(p.llamadas[0][0], pregunta)
+        saldo = c.resultado.cifras["saldo_post_cuota"]
+        self.assertIn(f"{saldo:,.2f}", c.mensajes[-1].texto)
+        self.assertIn("gastos y las cuotas", c.mensajes[-1].texto)
+
+    def test_fallback_da_una_lectura_financiera_con_importe_del_motor(self):
+        c = caso_confirmado()
+        p = ProveedorSimulado(error=ErrorProveedor("TIEMPO"))
+        saldo = c.resultado.cifras["saldo_post_cuota"]
+        self.conversar(c, "¿Crees que con ese sueldo le alcanza para pagar?", p)
+        self.assertIn(f"{saldo:,.2f}", c.mensajes[-1].texto)
+        self.assertIn("alcanza para cubrir", c.mensajes[-1].texto)
+        self.assertIn("tardó", c.mensajes[-1].texto)
+        self.conversar(c, "Compárame la primera y la segunda", p)
+        self.assertIn("Alternativa A.", c.mensajes[-1].texto)
+        self.assertIn("Alternativa B.", c.mensajes[-1].texto)
+        self.assertEqual(len(p.llamadas), 1)
+
+    def test_tcea_pendiente_incluye_causa_y_accion(self):
+        c = caso_confirmado()
+        p = ProveedorSimulado()
+        self.conversar(c, "¿Por qué la TCEA está pendiente?", p, permitido=False)
+        mensaje = c.mensajes[-1].texto
+        self.assertIn("desembolso", mensaje.lower())
+        self.assertIn("«Completar costos y fechas»", mensaje)
+        self.assertEqual(p.llamadas, [])
+
     def test_fallo_cierra_circuito_sin_aplicar_propuesta(self):
         self.assertEqual(codigo_error(SimpleNamespace(code=401)), "ACCESO")
         self.assertEqual(codigo_error(SimpleNamespace(code=429)), "CUOTA")

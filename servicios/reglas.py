@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal as D
 from dominio.modelos import Configuracion, Expediente, Resultado
+from servicios.costos import MOMENTOS, PAGADORES, diagnostico_tcea
 from servicios.finanzas import cronograma, numero, entero, tcea_fechada
 
 
@@ -16,6 +17,7 @@ def analizar(exp: Expediente, config=Configuracion(), ingreso_escenario=None):
     faltantes = [k for k in requeridos if getattr(exp, k) is None]
     if faltantes:
         alerta("VAL-01", ", ".join(faltantes), "Información incompleta: " + ", ".join(faltantes), "pendiente")
+        r.pendientes_tcea = diagnostico_tcea(exp, r)
         return r
     try:
         umbral = numero(config.umbral_dti, "Umbral DTI", 0, 1)
@@ -41,8 +43,9 @@ def analizar(exp: Expediente, config=Configuracion(), ingreso_escenario=None):
         mensual, inicial = D(0), D(0)
         for cargo in exp.cargos:
             valor = numero(cargo.importe, "Cargo")
-            if not cargo.concepto.strip() or cargo.momento not in ("MENSUAL", "INICIAL") or cargo.pagador not in ("SOLICITANTE", "TERCERO"):
-                raise ValueError("Indicar concepto, momento y pagador de cada cargo.")
+            pagador_admitido = cargo.pagador in (*PAGADORES, "PENDIENTE") or (cargo.pagador == "NO_APLICA" and valor == 0)
+            if not cargo.concepto.strip() or cargo.momento not in MOMENTOS or not pagador_admitido:
+                raise ValueError("Revisa el concepto, momento y pagador de cada cargo.")
             if cargo.pagador == "SOLICITANTE":
                 if cargo.momento == "MENSUAL":
                     mensual += valor
@@ -53,6 +56,7 @@ def analizar(exp: Expediente, config=Configuracion(), ingreso_escenario=None):
             numero(exp.patrimonio_valor, "Patrimonio")
     except (ValueError, ArithmeticError) as error:
         alerta("VAL-02", "entradas", str(error), "pendiente")
+        r.pendientes_tcea = diagnostico_tcea(exp, r)
         return r
 
     # Ningún candidato pendiente entra a un promedio confirmado.
@@ -139,13 +143,16 @@ def analizar(exp: Expediente, config=Configuracion(), ingreso_escenario=None):
             alerta("RN-02", "saldo_post_cuota", f"Déficit mensual S/ {saldo_post:.2f}.", "relevante")
         if dti is not None and dti > umbral:
             alerta("RN-03", "dti_total", f"DTI total {dti:.2%} > umbral didáctico {umbral:.2%}.", "relevante")
-    if exp.cargos_completos:
+    r.pendientes_tcea = diagnostico_tcea(exp, r)
+    if not exp.cargos_completos or any(cargo.pagador == "PENDIENTE" for cargo in exp.cargos):
+        r.supuestos.append("Los pagos e indicadores incluyen los cargos registrados a cargo del solicitante. Los costos desconocidos o con pagador pendiente aún no se incluyen.")
+    if not r.pendientes_tcea:
         try:
             r.tcea = tcea_fechada(monto - inicial, [f["pago_total"] for f in tabla], exp.fechas_pago, exp.fecha_desembolso)
         except (ValueError, ArithmeticError) as error:
-            alerta("RN-13", "TCEA", str(error))
-    else:
-        alerta("RN-13", "TCEA", "TCEA no calculable con los datos disponibles: confirmar todos los cargos, fechas y desembolso neto.")
+            r.pendientes_tcea = (f"Revisa el desembolso y los flujos de pago. {error}",)
+    if r.pendientes_tcea:
+        alerta("RN-13", "TCEA", " ".join(r.pendientes_tcea))
     niveles = {x["nivel"] for x in r.reglas}
     r.estado = ("DISCREPANCIA PENDIENTE" if "discrepancia" in niveles else
                 "DATOS INSUFICIENTES" if "pendiente" in niveles else

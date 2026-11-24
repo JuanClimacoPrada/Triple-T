@@ -70,7 +70,7 @@ def aplicar(c, cambios, fuente="DECLARADO_EN_CHAT"):
         cambios.update(resolucion_ingreso=None, justificacion_ingreso="")
     if any(k in cambios for k in ("monto", "meses", "tea")):
         # Cambiar contrato invalida confirmación de fechas/costos, no inventa flujos.
-        cambios.update(cargos_completos=False, fechas_pago=())
+        cambios.update(cargos_completos=False, fechas_pago=(), origen_fechas_pago=None)
     c.expediente = replace(c.expediente, **cambios, origen_campos=tuple(fuentes.items()))
     invalidar(c)
 
@@ -180,7 +180,8 @@ def crear_escenario(c, cambios, referente=None):
     except ValueError:
         if parametros.get("caida", D(0)):
             raise ValueError("No se puede simular capacidad con caída de ingreso hasta resolver los datos/discrepancias del expediente.") from None
-        exp = replace(c.expediente, monto=monto, meses=meses, tea=tea, cargos_completos=False, fechas_pago=())
+        exp = replace(c.expediente, monto=monto, meses=meses, tea=tea, cargos_completos=False,
+                      fechas_pago=(), origen_fechas_pago=None)
         r = resultado_para(c, exp)
         r.supuestos.append("Escenario parcial: cambios de préstamo; no valida capacidad ni resuelve discrepancias.")
     c.revision += 1

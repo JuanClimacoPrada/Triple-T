@@ -1,7 +1,7 @@
 """Comparador de condiciones del préstamo y registro de la elección humana."""
+import pandas as pd
 import streamlit as st
 
-from conversacion.gestor import decir
 from experiencia.comparador import (
     cancelar_seleccion,
     editar,
@@ -10,7 +10,7 @@ from experiencia.comparador import (
     proponer_seleccion,
     regenerar,
 )
-from servicios.alternativas import Alternativa, NOMBRES, PESOS
+from servicios.alternativas import Alternativa, NOMBRES, PESOS, efectos_principales, interpretar_saldo
 from triple_t_pro_layout import section_title
 
 
@@ -58,61 +58,81 @@ def fila_escenario(alternativa, escenario):
     }
 
 
-def tarjeta(c, evaluacion, base):
+def titulo_alternativa(c, alternativa):
+    exp = c.expediente
+    if alternativa.codigo == "A" and (alternativa.monto, alternativa.meses, alternativa.tea) == (exp.monto, exp.meses, exp.tea):
+        enfoque = "Mantener condiciones"
+    elif (alternativa.codigo == "B" and alternativa.monto == exp.monto and alternativa.tea == exp.tea
+          and alternativa.meses is not None and exp.meses is not None and alternativa.meses > exp.meses):
+        enfoque = "Ampliar plazo"
+    elif (alternativa.codigo == "C" and alternativa.meses == exp.meses and alternativa.tea == exp.tea
+          and alternativa.monto is not None and exp.monto is not None and alternativa.monto < exp.monto):
+        enfoque = "Reducir monto"
+    else:
+        enfoque = "Condiciones ajustadas" if None not in (alternativa.monto, alternativa.meses, alternativa.tea) else "Completar condiciones"
+    return f"Alternativa {alternativa.codigo} · {enfoque}"
+
+
+def analizar_alternativa(c, codigo):
+    if c.alternativa_propuesta != codigo:
+        cancelar_seleccion(c)
+    c.alternativa_en_contexto = codigo
+    c.vista = "ALTERNATIVAS"
+    st.session_state.pestana_analisis = "Alternativas"
+    st.session_state.pop("matriz_crediticia_visible", None)
+
+
+def tarjeta(c, evaluacion, base, ambito):
     alternativa = evaluacion.alternativa
-    escenario = evaluacion.escenarios[1]
-    cifras = escenario.resultado.cifras
-    with st.container(border=True):
-        st.markdown(f"**Alternativa {alternativa.codigo}**")
+    cifras = evaluacion.escenarios[1].resultado.cifras
+    beneficio, desventaja = efectos_principales(evaluacion, base)
+    with st.container(border=True, gap="small", key=f"tt_alt_card_{ambito}_{alternativa.codigo}"):
+        st.markdown(f"**{titulo_alternativa(c, alternativa)}**")
         st.caption(condiciones(alternativa))
-        st.markdown(f"**{puntuacion(evaluacion.puntaje_global)}**")
-        st.caption(f"Pago esperado {dinero(cifras.get('pago_mensual_total'))} · Cobertura {porcentaje(evaluacion.cobertura)}")
-        pago_base = base.cifras.get("pago_mensual_total")
+        st.markdown(f"Cuota mensual **{dinero(cifras.get('cuota_base'))}**")
         pago = cifras.get("pago_mensual_total")
-        if pago is not None and pago_base is not None and pago != pago_base:
-            direccion = "menos" if pago < pago_base else "más"
-            st.caption(f"{dinero(abs(pago - pago_base))} {direccion} al mes frente al caso base.")
-        interes_base = base.cifras.get("intereses")
-        interes = cifras.get("intereses")
-        if interes is not None and interes_base is not None and interes != interes_base:
-            direccion = "menos" if interes < interes_base else "más"
-            st.caption(f"{dinero(abs(interes - interes_base))} {direccion} de intereses frente al caso base.")
+        if pago is not None and pago != cifras.get("cuota_base"):
+            st.caption(f"Pago con cargos {dinero(pago)}")
+        st.caption(f"Escenario esperado · DTI {porcentaje(cifras.get('dti_total'))} · Saldo {dinero(cifras.get('saldo_post_cuota'))}")
+        st.markdown(f"Puntuación académica **{puntuacion(evaluacion.puntaje_global)}**")
         if evaluacion.preliminar and evaluacion.puntaje_global is not None:
             st.caption("Evaluación preliminar")
-        if st.button("Ver consecuencias", key=f"ver_alternativa_{alternativa.codigo}", width="stretch"):
-            c.alternativa_en_contexto = alternativa.codigo
-            c.vista = "ALTERNATIVAS"
-            resumen = [linea for linea in evaluacion.consecuencias if linea.startswith((
-                "Pago mensual con cargos", "Intereses", "El monto cubre",
-            ))]
-            detalle = " ".join(resumen or evaluacion.consecuencias[:1])
-            decir(c, f"Alternativa {alternativa.codigo}. {detalle} Puedes revisar los tres escenarios en el comparador.")
-            st.rerun()
-        if st.button(f"Seleccionar alternativa {alternativa.codigo}", key=f"elegir_alternativa_{alternativa.codigo}",
-                     width="stretch", disabled=not evaluacion.seleccionable):
-            try:
-                proponer_seleccion(c, alternativa.codigo)
-                st.rerun()
-            except ValueError as error:
-                st.warning(str(error))
+        st.caption(beneficio)
+        st.caption(desventaja)
+        st.button(f"Analizar alternativa {alternativa.codigo}",
+                  key=f"{ambito}_analizar_{alternativa.codigo}", width="stretch",
+                  on_click=analizar_alternativa, args=(c, alternativa.codigo))
 
 
-def detalle_resultado(evaluacion):
+def detalle_resultado(c, evaluacion, base):
     alternativa = evaluacion.alternativa
+    st.markdown(f"### {titulo_alternativa(c, alternativa)}")
+    st.caption(f"{condiciones(alternativa)} · Puntuación académica {puntuacion(evaluacion.puntaje_global)}")
     if evaluacion.motivo_pendiente:
         st.warning(evaluacion.motivo_pendiente)
-    for parrafo in evaluacion.consecuencias:
-        st.write(parrafo)
+    beneficio, desventaja = efectos_principales(evaluacion, base)
+    st.markdown("**Consecuencias de aplicar la alternativa**")
+    st.write(f"{beneficio} {desventaja}")
+    esperado = evaluacion.escenarios[1].resultado
+    saldo_esperado = interpretar_saldo(esperado)
+    st.write(f"En el escenario esperado, {saldo_esperado[0].lower() + saldo_esperado[1:]}")
     for etiqueta, escenario in (("Más favorable", evaluacion.favorable), ("Más desfavorable", evaluacion.desfavorable)):
         if escenario is None:
             continue
         cifras = escenario.resultado.cifras
         st.caption(f"{etiqueta} por saldo mensual · {escenario.nombre} · caída {escenario.caida:.2f}% · "
                    f"saldo {dinero(cifras.get('saldo_post_cuota'))} · DTI {porcentaje(cifras.get('dti_total'))}")
-    st.dataframe([fila_escenario(alternativa, escenario) for escenario in evaluacion.escenarios],
-                 hide_index=True, width="stretch", column_config={"Alternativa": None})
-    with st.container(border=True):
-        st.markdown("**Puntuación por criterio y alertas**")
+    st.markdown("**Tres escenarios de ingreso**")
+    for columna, escenario in zip(st.columns(3, gap="small"), evaluacion.escenarios):
+        with columna:
+            tarjeta_escenario(escenario)
+    graficar_saldo(evaluacion)
+    if evaluacion.desfavorable and evaluacion.desfavorable is not evaluacion.escenarios[1]:
+        st.caption(interpretar_saldo(evaluacion.desfavorable.resultado))
+    with st.expander("Comparación con la solicitud original y puntuación por criterio"):
+        for parrafo in evaluacion.consecuencias:
+            if not parrafo.startswith(tuple(NOMBRES)):
+                st.text(parrafo)
         filas = []
         for escenario in evaluacion.escenarios:
             fila = {"Escenario": escenario.nombre}
@@ -123,14 +143,19 @@ def detalle_resultado(evaluacion):
             filas.append(fila)
         st.dataframe(filas, hide_index=True, width="stretch")
         st.caption(f"Promedio académico de escenarios, sin probabilidades asignadas · {puntuacion(evaluacion.puntaje_global)}")
+    with st.expander("Alertas y supuestos de la alternativa"):
+        avisos, supuestos = {}, {}
         for escenario in evaluacion.escenarios:
-            st.markdown(f"**{escenario.nombre} · caída {escenario.caida:.2f}%**")
             for aviso in escenario.resultado.reglas:
-                st.text(aviso["mensaje"])
-            if not escenario.resultado.reglas:
-                st.caption("Sin alertas del motor.")
+                avisos.setdefault(aviso["mensaje"], []).append(escenario.nombre)
             for supuesto in escenario.resultado.supuestos:
-                st.caption(supuesto)
+                supuestos.setdefault(supuesto, []).append(escenario.nombre)
+        for mensaje, etiquetas in avisos.items():
+            st.text(f"{', '.join(etiquetas)} · {mensaje}")
+        if not avisos:
+            st.caption("Sin alertas del motor.")
+        for mensaje, etiquetas in supuestos.items():
+            st.caption(f"{', '.join(etiquetas)} · {mensaje}")
 
 
 def formulario_edicion(c, alternativa):
@@ -161,32 +186,48 @@ def formulario_edicion(c, alternativa):
                 st.warning(str(error))
 
 
-def eleccion(c, evaluaciones):
-    propuesta = c.alternativa_propuesta
+def mostrar_seleccion(c, ambito="resumen"):
+    if not c.flujo or c.flujo.revision_confirmada != c.revision or c.pendiente:
+        return
     seleccion = c.seleccion_alternativa
-    if seleccion is not None:
-        st.success(f"Alternativa {seleccion.codigo} seleccionada")
+    if seleccion is None or seleccion.revision != c.revision:
+        return
+    with st.container(border=True, key=f"tt_seleccion_alternativa_{ambito}"):
+        st.markdown(f"**Alternativa {seleccion.codigo} seleccionada**")
         st.caption(f"{condiciones(seleccion.evaluacion.alternativa)} · {puntuacion(seleccion.evaluacion.puntaje_global)} · "
                    f"{seleccion.fecha:%d/%m/%Y %H:%M %Z}")
         st.text(f"Justificación: {seleccion.justificacion}")
-    if propuesta is None:
-        return
-    evaluacion = evaluaciones[propuesta]
+
+
+def eleccion(c, evaluacion):
     alternativa = evaluacion.alternativa
+    codigo = alternativa.codigo
+    if c.seleccion_alternativa and c.seleccion_alternativa.codigo == codigo and c.alternativa_propuesta is None:
+        mostrar_seleccion(c, "detalle")
+        return
+    if c.alternativa_propuesta != codigo:
+        if st.button("Seleccionar esta alternativa", key=f"seleccionar_detalle_{codigo}",
+                     type="primary", disabled=not evaluacion.seleccionable):
+            try:
+                proponer_seleccion(c, codigo)
+                st.rerun()
+            except ValueError as error:
+                st.warning(str(error))
+        if not evaluacion.seleccionable:
+            st.caption("Completa las condiciones y calcula la cuota para registrar la elección.")
+        return
     with st.container(border=True):
-        st.markdown(f"**Confirmar alternativa {propuesta}**")
+        st.markdown(f"**Confirmar alternativa {codigo}**")
         st.caption(f"{condiciones(alternativa)} · {puntuacion(evaluacion.puntaje_global)}")
-        st.dataframe([fila_escenario(alternativa, escenario) for escenario in evaluacion.escenarios],
-                     hide_index=True, width="stretch",
-                     column_config={"Alternativa": None, "Supuestos": None})
-        with st.form(f"confirmar_alternativa_{c.revision}_{propuesta}", clear_on_submit=True):
-            justificacion = st.text_area("Justificación breve, sin datos personales", max_chars=300)
+        with st.form(f"confirmar_alternativa_{c.revision}_{codigo}"):
+            justificacion = st.text_area("Justificación breve, sin datos personales", max_chars=300,
+                                         placeholder="Explica qué indicador o condición motivó tu elección.")
             with st.container(horizontal=True):
                 confirmar = st.form_submit_button("Confirmar selección", type="primary")
                 cancelar = st.form_submit_button("Cancelar selección")
         if confirmar:
             try:
-                guardar_seleccion(c, propuesta, justificacion)
+                guardar_seleccion(c, codigo, justificacion)
                 st.rerun()
             except ValueError as error:
                 st.warning(str(error))
@@ -214,34 +255,101 @@ def metodologia(comparativa):
                       for criterio, peso in PESOS.items()], hide_index=True, width="stretch")
 
 
-def mostrar_alternativas(c):
-    section_title("Comparación de alternativas del préstamo", "scale")
+def tarjetas_alternativas(c, comparativa, ambito):
+    st.info(comparativa.recomendacion)
+    for columna, evaluacion in zip(st.columns(3, gap="small"), comparativa.alternativas):
+        with columna:
+            tarjeta(c, evaluacion, comparativa.base, ambito)
+
+
+def mostrar_resumen_alternativas(c):
+    section_title("Comparación de alternativas", "scale")
     try:
         comparativa = obtener(c)
     except ValueError as error:
         st.info(str(error))
         return
-    st.caption("Tres condiciones de crédito para el mismo expediente y tres escenarios de ingreso por alternativa.")
-    st.info(comparativa.recomendacion)
-    evaluaciones = {e.alternativa.codigo: e for e in comparativa.alternativas}
-    for columna, evaluacion in zip(st.columns(3, gap="small"), evaluaciones.values()):
-        with columna:
-            tarjeta(c, evaluacion, comparativa.base)
-    eleccion(c, evaluaciones)
+    tarjetas_alternativas(c, comparativa, "resumen")
 
-    codigo = c.alternativa_en_contexto
-    for item, evaluacion in evaluaciones.items():
-        with st.expander(f"Consecuencias y tres escenarios de {item}", expanded=codigo == item):
-            detalle_resultado(evaluacion)
 
-    with st.expander("Matriz de nueve resultados"):
-        filas = [fila_escenario(e.alternativa, escenario) for e in evaluaciones.values() for escenario in e.escenarios]
-        st.dataframe(filas, hide_index=True, width="stretch", height=360)
-        st.caption("Desplázate dentro de la tabla para ver costos, alertas, supuestos y puntuación de cada escenario.")
+def mostrar_puntuaciones(c):
+    try:
+        comparativa = obtener(c)
+    except ValueError:
+        return
+    st.markdown("**Puntuación académica de las alternativas**")
+    st.dataframe([{"Alternativa": e.alternativa.codigo, "Puntuación": puntuacion(e.puntaje_global),
+                   "Estado": ("Pendiente" if e.puntaje_global is None else "Preliminar" if e.preliminar else "Calculada")}
+                  for e in comparativa.alternativas], hide_index=True, width="stretch")
 
-    for evaluacion in evaluaciones.values():
-        formulario_edicion(c, evaluacion.alternativa)
+
+def tarjeta_escenario(escenario):
+    cifras = escenario.resultado.cifras
+    saldo = cifras.get("saldo_post_cuota")
+    nombre = escenario.nombre.lower()
+    with st.container(border=True, gap="small", key=f"tt_escenario_{nombre}"):
+        st.markdown(f"**{escenario.nombre}** · caída de {escenario.caida:.0f}%")
+        st.caption(f"Ingreso {dinero(cifras.get('ingresos_admisibles'))} · DTI {porcentaje(cifras.get('dti_total'))}")
+        st.markdown(f"Saldo **{dinero(saldo)}** · {puntuacion(escenario.puntaje)}")
+        if saldo is not None and saldo < 0:
+            st.caption("El ingreso no cubre todos los gastos y pagos.")
+
+
+def graficar_saldo(evaluacion):
+    filas = []
+    for escenario in evaluacion.escenarios:
+        saldo = escenario.resultado.cifras.get("saldo_post_cuota")
+        if saldo is not None:
+            filas.append({"Escenario": escenario.nombre, "Saldo mensual (S/)": float(saldo)})
+    if filas:
+        st.caption("Saldo después de gastos y cuotas según el escenario")
+        st.bar_chart(pd.DataFrame(filas), x="Escenario", y="Saldo mensual (S/)", color="#2469c6", sort=False, height=170,
+                     alt="Saldo mensual después de gastos y cuotas para cada escenario de ingreso")
+
+
+def volver_al_listado(c):
+    cancelar_seleccion(c)
+    c.alternativa_en_contexto = None
+    st.session_state.pop("matriz_crediticia_visible", None)
+
+
+def abrir_matriz(c):
+    volver_al_listado(c)
+    st.session_state.matriz_crediticia_visible = c.revision
+
+
+def mostrar_matriz(comparativa):
+    section_title("Matriz de nueve resultados", "chart")
+    filas = [fila_escenario(e.alternativa, escenario) for e in comparativa.alternativas for escenario in e.escenarios]
+    orden = ("Alternativa", "Escenario", "Saldo después del pago", "DTI", "Pago mensual con cargos", "Caída de ingreso", "Puntuación")
+    columnas = (*orden, *(k for k in filas[0] if k not in orden))
+    st.dataframe(filas, column_order=columnas, hide_index=True, width="stretch", height=360)
+    st.caption("Desplázate dentro de la tabla para ver ingresos, cargos, alertas y demás indicadores.")
     metodologia(comparativa)
+
+
+def mostrar_alternativas(c):
+    try:
+        comparativa = obtener(c)
+    except ValueError as error:
+        st.info(str(error))
+        return
+    evaluaciones = {e.alternativa.codigo: e for e in comparativa.alternativas}
+    evaluacion = evaluaciones.get(c.alternativa_en_contexto)
+    if evaluacion is not None or st.session_state.get("matriz_crediticia_visible") == c.revision:
+        st.button("Volver a alternativas", icon=":material/arrow_back:", on_click=volver_al_listado, args=(c,))
+    if evaluacion is not None:
+        with st.container(key=f"tt_alternativa_detalle_{evaluacion.alternativa.codigo}"):
+            detalle_resultado(c, evaluacion, comparativa.base)
+            eleccion(c, evaluacion)
+            formulario_edicion(c, evaluacion.alternativa)
+        return
+    if st.session_state.get("matriz_crediticia_visible") == c.revision:
+        mostrar_matriz(comparativa)
+        return
+    section_title("Alternativas del préstamo", "scale")
+    tarjetas_alternativas(c, comparativa, "comparador")
+    st.button("Ver matriz general de nueve escenarios", icon=":material/table_chart:", on_click=abrir_matriz, args=(c,))
     if st.button("Restablecer alternativas y caídas iniciales", key="regenerar_alternativas"):
         try:
             regenerar(c)
