@@ -156,7 +156,15 @@ class TestApp(unittest.TestCase):
     def test_navegacion_operativa_y_diagnostico_costos(self):
         app = self.iniciar()
         self.cargar_caso(app)
+        self.assertFalse(any("Alertas financieras y documentales" in m.value for m in app.markdown))
+        self.assertFalse(any(b.label == "Ver alternativas" for b in app.button))
         self.confirmar_caso(app)
+        resumen_tab = next(tab for tab in app.tabs if tab.label == "Resumen")
+        indicadores = next(tab for tab in app.tabs if tab.label == "Indicadores")
+        self.assertFalse(any("Capacidad utilizada" in m.value for m in resumen_tab.markdown))
+        self.assertTrue(any("Capacidad utilizada" in m.value for m in indicadores.markdown))
+        self.assertTrue(any("Alertas financieras y documentales" in m.value for m in indicadores.markdown))
+        self.assertFalse(any("Alertas financieras y documentales" in m.value for m in resumen_tab.markdown))
         self.assertFalse(any("Guardar escenario esperado" == b.label for b in app.button))
         self.assertFalse(any("Comparación estratégica" in b.label for b in app.button))
         self.assertFalse(any("Cargar caso" in b.label for b in app.button))
@@ -167,18 +175,19 @@ class TestApp(unittest.TestCase):
         self.assertIsNotNone(next((b for b in app.button if b.label == "Guardar costos y fechas"), None))
 
     @patch.dict("os.environ", {"TRIPLE_T_HERRAMIENTAS_DEV": "false", "GEMINI_ENABLED": "true"})
-    def test_consentimiento_en_configuracion_y_vigente_al_volver(self):
+    def test_consentimiento_en_informe_y_vigente_al_volver(self):
         app = self.iniciar()
         self.assertFalse(any(b.label == "Desarrollo" for b in app.button))
-        self.assertFalse(any("Consiento" in w.label for w in app.checkbox))
-        self.boton(app, "Configuración")
-        self.assertEqual(sum("Consiento" in w.label for w in app.checkbox), 1)
+        informe = next(tab for tab in app.tabs if tab.label == "Informe e IA")
+        self.assertEqual(len(app.checkbox), 1)
+        self.assertEqual(len(informe.checkbox), 1)
         app.checkbox(key="consentimiento_gemini").set_value(True).run()
+        self.boton(app, "Criterios")
+        self.assertFalse(any("Consiento" in w.label for w in app.checkbox))
         self.boton(app, "Análisis crediticio")
         c = self.enviar(app, "hola")
         self.assertIn("hola", c.mensajes[-1].texto.lower())
         self.assertEqual(app.session_state["ia"].llamadas, 0)
-        self.boton(app, "Configuración")
         self.assertTrue(app.checkbox(key="consentimiento_gemini").value)
 
 

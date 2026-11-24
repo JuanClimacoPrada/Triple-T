@@ -25,12 +25,15 @@ class TestAlternativasUI(TestCase):
         self.pulsar(app, "Confirmar y calcular")
         c = app.session_state["conversacion"]
         expediente = c.expediente
+        self.pulsar(app, "Ver alternativas")
+        self.assertEqual(app.session_state["pestana_analisis"], "Alternativas")
         self.pulsar(app, "Ver matriz general de nueve escenarios")
         matriz = next(t.value for t in app.dataframe if "Caída de ingreso" in t.value.columns and len(t.value) == 9)
         self.assertEqual(matriz["Alternativa"].tolist(), ["A"] * 3 + ["B"] * 3 + ["C"] * 3)
         self.assertEqual(matriz["Caída de ingreso"].tolist(), ["0.00%", "10.00%", "30.00%"] * 3)
 
-        app.button(key="resumen_analizar_B").click().run(timeout=30)
+        self.pulsar(app, "Volver a alternativas")
+        app.button(key="comparador_analizar_B").click().run(timeout=30)
         self.assertFalse(app.exception)
         self.assertEqual(app.session_state["pestana_analisis"], "Alternativas")
         self.assertEqual(c.alternativa_en_contexto, "B")
@@ -41,7 +44,8 @@ class TestAlternativasUI(TestCase):
         self.assertIsNone(c.seleccion_alternativa)
         self.pulsar(app, "Cancelar selección")
         self.assertIsNone(c.alternativa_propuesta)
-        app.button(key="resumen_analizar_C").click().run(timeout=30)
+        self.pulsar(app, "Volver a alternativas")
+        app.button(key="comparador_analizar_C").click().run(timeout=30)
         self.assertFalse(app.exception)
         self.pulsar(app, "Seleccionar esta alternativa")
         next(i for i in app.text_area if i.label == "Justificación breve, sin datos personales").set_value("e")

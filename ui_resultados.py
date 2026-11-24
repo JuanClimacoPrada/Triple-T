@@ -1,33 +1,54 @@
+"""Cronograma y sustento de ingresos del expediente vigente."""
 import csv
 import io
-from decimal import Decimal as D
-import streamlit as st
-from visualizaciones import filas_visibles, mostrar_graficos
 
-def mostrar_resultado(resultado, base=None, *, mostrar_alertas=True):
-    st.subheader(resultado.estado)
-    st.caption("Recomendación para revisión del analista. No implica decisión crediticia.")
-    if resultado.cifras:
-        cs = st.columns(3)
-        for i, campo in enumerate(("cuota_base", "pago_mensual_total", "saldo_post_cuota")):
-            valor = resultado.cifras.get(campo)
-            cs[i].metric(campo.replace("_", " ").capitalize(), "N/D" if valor is None else f"S/ {valor:,.2f}")
-        dti = resultado.cifras.get("dti_total")
-        st.metric("DTI total", "N/D" if dti is None else f"{dti:.2%}")
-        st.dataframe([{"Indicador calculado": k, "Valor": "N/D" if v is None else f"{v:.2f}" if isinstance(v, D) else str(v)} for k, v in resultado.cifras.items()], hide_index=True)
-    if mostrar_alertas:
-        for regla in resultado.reglas:
-            st.warning(regla["mensaje"])
-    st.write(f"TCEA referencial: {resultado.tcea:.2%}" if resultado.tcea is not None else "TCEA no calculable con los datos disponibles.")
-    if resultado.meses_ingreso:
-        st.dataframe(filas_visibles(resultado.meses_ingreso), hide_index=True)
+import streamlit as st
+
+from visualizaciones import filas_visibles
+
+
+def mostrar_resultado(resultado, base=None):
     if resultado.tabla:
         filas = filas_visibles(resultado.tabla)
-        st.dataframe(filas, hide_index=True)
-        st.caption("Soles. Precisión interna conservada; redondeo de presentación a dos decimales. Las sumas de cifras mostradas pueden diferir por céntimos. Último pago ajustado al saldo interno.")
+        columnas = {
+            "periodo": "Mes",
+            "pago_total": "Pago",
+            "amortizacion": "Capital",
+            "interes": "Interés",
+        }
+        if any(fila["cargos"] for fila in resultado.tabla):
+            columnas["cargos"] = "Cargos"
+        columnas["saldo_final"] = "Saldo pendiente"
+
+        st.dataframe(
+            [{titulo: fila[campo] for campo, titulo in columnas.items()} for fila in filas],
+            hide_index=True,
+            width="stretch",
+            column_config={titulo: st.column_config.NumberColumn(format="%.2f")
+                           for campo, titulo in columnas.items() if campo != "periodo"},
+        )
+        st.caption("Importes en soles. El redondeo a céntimos puede causar pequeñas diferencias al sumar las filas.")
+
         salida = io.StringIO()
         writer = csv.DictWriter(salida, fieldnames=filas[0].keys())
         writer.writeheader()
         writer.writerows(filas)
-        st.download_button("Descargar amortización (CSV)", salida.getvalue().encode("utf-8-sig"), "amortizacion.csv", "text/csv", key="csv_" + ("sim" if base else "base"))
-    mostrar_graficos(st, resultado, base)
+        st.download_button(
+            "Descargar amortización (CSV)", salida.getvalue().encode("utf-8-sig"),
+            "amortizacion.csv", "text/csv", key="csv_sim" if base is not None else "csv_base",
+        )
+    else:
+        st.info("Completa las condiciones del préstamo para calcular el cronograma de pagos.")
+
+    if resultado.meses_ingreso:
+        with st.expander("Ingresos documentados por mes"):
+            filas = filas_visibles(resultado.meses_ingreso)
+            st.dataframe(
+                [{"Mes": fila["mes"], "Ingreso neto (S/)": fila["neto"],
+                  "Extraordinarios excluidos (S/)": fila["extraordinarios_excluidos"],
+                  "Documento": fila["origen"]} for fila in filas],
+                hide_index=True,
+                width="stretch",
+                column_config={campo: st.column_config.NumberColumn(format="%.2f")
+                               for campo in ("Ingreso neto (S/)", "Extraordinarios excluidos (S/)")},
+            )

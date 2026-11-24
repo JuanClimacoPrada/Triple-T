@@ -3,7 +3,7 @@ from dataclasses import replace
 from decimal import Decimal as D
 import os
 import streamlit as st
-from dominio.modelos import Configuracion, VERSION_REGLAS
+from dominio.modelos import Configuracion
 from conversacion.gestor import decir, recibir, confirmar_accion, invalidar, crear_escenario, actual, generar_informe, aclarar_ingreso
 from experiencia.flujo import siguiente, iniciar, diferir, confirmar_revision, faltan
 from experiencia.preguntas import TITULOS, ETIQUETAS, legible
@@ -18,15 +18,17 @@ from ui_resultados import mostrar_resultado
 from ui_estrategia import mostrar_estrategia
 from casos import CASOS
 from ui_riesgo import mostrar_riesgo
-from ui_alternativas import mostrar_alternativas, mostrar_resumen_alternativas, mostrar_seleccion, mostrar_puntuaciones
+from ui_alternativas import mostrar_alternativas, mostrar_seleccion
 from ui_chat import editor_costos, editor_anotaciones
 from servicios.costos import diagnostico_tcea
 from servicios.alternativas import interpretar_saldo
+from experiencia.comparador import obtener
+from visualizaciones import mostrar_graficos
 from triple_t_pro_layout import (construir_vm, sentinel_config, load_styles, hero_html,
     message_html, steps_html, section_title, render_dashboard_area, sentinel_link_html)
 
 TAB_POR_VISTA = {"ALTERNATIVAS": "Alternativas", "SIMULAR": "Simular", "DETALLE": "Detalle",
-                 "GRAFICO": "Gráficos", "PDF": "Informe", "COSTOS": "Detalle"}
+                 "GRAFICO": "Gráficos", "PDF": "Informe e IA", "COSTOS": "Detalle"}
 
 
 def abrir_pestana(c):
@@ -67,6 +69,8 @@ def accion(nombre):
         decir(c, siguiente(c))
     elif nombre == "CALCULAR":
         confirmar_revision(c)
+        if f.revision_confirmada == c.revision:
+            st.session_state.pestana_analisis = "Resumen"
     elif nombre in ("NO_SE", "DESPUES", "SOLICITAR"):
         diferir(c, "SOLICITAR" if nombre == "SOLICITAR" else "PENDIENTE")
     elif nombre in ("BOLETAS", "OTRO_INGRESO", "PATRIMONIO"):
@@ -127,19 +131,17 @@ def navegar(pagina):
     st.session_state.navegacion = pagina
 
 
-def barra_lateral(c):
+def barra_lateral():
     with st.sidebar:
         st.markdown('<div class="tt-side-brand">Triple<span>-T</span></div>', unsafe_allow_html=True)
         destinos = [("Análisis crediticio", "ANALISIS", "analytics"), ("Expediente", "EXPEDIENTE", "folder_open"),
-                    ("Historial de cambios", "HISTORIAL", "history"), ("Configuración", "CONFIGURACION", "settings")]
+                    ("Historial", "HISTORIAL", "history"), ("Criterios", "CONFIGURACION", "settings")]
         if os.environ.get("TRIPLE_T_HERRAMIENTAS_DEV", "").lower() == "true":
             destinos.append(("Desarrollo", "DESARROLLO", "science"))
         for etiqueta, pagina, icono in destinos:
             st.button(etiqueta, key="nav_" + pagina, icon=f":material/{icono}:", width="stretch",
                       type="primary" if st.session_state.get("navegacion", "ANALISIS") == pagina else "secondary",
                       on_click=navegar, args=(pagina,))
-        st.markdown('<div class="tt-side-label">Mi evaluación</div>', unsafe_allow_html=True)
-        st.caption(TITULOS[c.flujo.etapa])
         st.button("Nueva evaluación", icon=":material/add:", on_click=enviar, args=("reiniciar",))
 
 
@@ -279,27 +281,25 @@ ACCIONES_AVISO = {
 }
 
 
-def mostrar_avisos(c, r, *, resumen=False):
+def mostrar_avisos(c, r):
     avisos = avisos_evaluacion(c, r)
     if not avisos:
         return
-    section_title("Qué conviene revisar" if resumen else "Alertas financieras y documentales", "file")
-    mostrados = avisos[:2] if resumen else avisos
+    section_title("Alertas financieras y documentales", "file")
     acciones = set()
-    for indice, (titulo, descripcion, ruta) in enumerate(mostrados):
+    for indice, (titulo, descripcion, ruta) in enumerate(avisos):
         with st.container(border=True):
             st.markdown(f"**{titulo}**")
             st.text(descripcion)
             if ruta and ruta not in acciones:
-                boton(ACCIONES_AVISO[ruta], ruta, key=f"aviso_{resumen}_{indice}")
+                boton(ACCIONES_AVISO[ruta], ruta, key=f"aviso_{indice}")
                 acciones.add(ruta)
-    if resumen and len(avisos) > len(mostrados):
-        boton("Ver todas las alertas", "INDICADORES")
 
 
 def mostrar_tcea(exp, resultado):
     pendientes = diagnostico_tcea(exp, resultado)
     if resultado.tcea is not None and not pendientes:
+        st.markdown(f"**TCEA referencial {resultado.tcea:.2%}**")
         return
     with st.container(border=True, key="tt_tcea_notice"):
         st.markdown("**TCEA pendiente**")
@@ -314,14 +314,21 @@ def resultados(c, seccion):
         return
     if seccion == "Resumen":
         st.write(interpretar_saldo(r))
-        mostrar_avisos(c, r, resumen=True)
-        mostrar_resumen_alternativas(c)
-        mostrar_seleccion(c)
+        boton("Ver alternativas", "ALTERNATIVAS", type="primary", icon=":material/compare_arrows:")
+        if avisos_evaluacion(c, r):
+            boton("Consultar alertas en Indicadores", "INDICADORES")
     elif seccion == "Indicadores":
-        st.write(interpretar_saldo(r))
-        mostrar_tcea(exp, r)
         mostrar_avisos(c, r)
-        mostrar_puntuaciones(c)
+        section_title("Costo del financiamiento", "wallet")
+        if "intereses" in r.cifras and "total_pagos" in r.cifras:
+            st.caption(f"Intereses S/ {r.cifras['intereses']:,.2f} · Total de pagos S/ {r.cifras['total_pagos']:,.2f} con los cargos registrados.")
+        mostrar_tcea(exp, r)
+    elif seccion == "Gráficos":
+        try:
+            comparativa = obtener(c)
+        except ValueError:
+            comparativa = None
+        mostrar_graficos(st, r, c.resultado if c.escenario else None, comparativa)
     elif seccion == "Detalle":
         if c.vista == "COSTOS":
             boton("Volver al detalle del caso", "DETALLE")
@@ -329,8 +336,7 @@ def resultados(c, seccion):
         else:
             section_title("Cronograma y supuestos")
             boton("Completar costos y fechas", "COSTOS", key="costos_detalle")
-            mostrar_resultado(r, base=c.resultado if c.escenario else None, mostrar_alertas=False)
-            st.caption(f"Reglas {VERSION_REGLAS} · Fecha {exp.fecha} · Sistema francés con TEA fija. Las cifras se redondean para su presentación.")
+            mostrar_resultado(r, base=c.resultado if c.escenario else None)
             with st.expander("Supuestos del cálculo"):
                 for supuesto in r.supuestos:
                     st.caption(supuesto)
@@ -342,7 +348,7 @@ def resultados(c, seccion):
         else:
             st.info("Completa monto, plazo y TEA antes de crear escenarios financieros.")
             boton("Completar condiciones", "CONTINUAR", key="completar_simular")
-    elif seccion == "Informe":
+    elif seccion == "Informe e IA":
         mostrar_seleccion(c, "informe")
         boton("Preparar informe PDF", "PDF", type="primary")
         if c.informe is not None and c.informe_revision == c.revision and not c.pendiente:
@@ -374,7 +380,7 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
     st.caption(AVISO_DEMO)
     if c.pendiente:
         st.session_state.navegacion = "ANALISIS"
-    barra_lateral(c)
+    barra_lateral()
     pagina = st.session_state.get("navegacion", "ANALISIS")
     if pagina == "EXPEDIENTE":
         with st.container(border=True, key="tt_dossier"):
@@ -398,8 +404,6 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
         return
     if pagina == "CONFIGURACION":
         with st.container(border=True, key="tt_settings"):
-            panel_ia()
-            st.divider()
             configuracion_academica(c)
         return
     if pagina == "DESARROLLO" and os.environ.get("TRIPLE_T_HERRAMIENTAS_DEV", "").lower() == "true":
@@ -456,15 +460,15 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
         with dashboard:
             with st.container(key="tt_dashboard_panel", border=True):
                 section_title("Análisis del crédito")
-                nombres = ["Resumen", "Alternativas", "Indicadores", "Gráficos", "Detalle", "Simular", "Informe"]
+                nombres = ["Resumen", "Alternativas", "Indicadores", "Gráficos", "Detalle", "Simular", "Informe e IA"]
+                if st.session_state.get("pestana_analisis") == "Informe":
+                    st.session_state.pestana_analisis = "Informe e IA"
                 pestanas = st.tabs(nombres, key="pestana_analisis", on_change=cambiar_pestana, args=(c,))
                 confirmado = c.flujo.etapa == "RESULTADOS" and not c.pendiente
                 for nombre, pestana in zip(nombres, pestanas):
                     with pestana, st.container(key="panel_" + nombre):
-                        if nombre in ("Resumen", "Indicadores", "Gráficos"):
+                        if nombre == "Resumen" or (confirmado and nombre in ("Indicadores", "Gráficos")):
                             render_dashboard_area(vm, nombre)
-                        if nombre == "Indicadores" and vm.sentinel_url:
-                            st.markdown(sentinel_link_html(vm.sentinel_url), unsafe_allow_html=True)
                         if nombre == "Detalle" and c.vista == "COSTOS" and not confirmado:
                             boton("Volver al detalle del caso", "DETALLE")
                             editor_costos(c)
@@ -473,11 +477,14 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                                 mostrar_alternativas(c)
                             else:
                                 resultados(c, nombre)
-                        elif nombre in ("Alternativas", "Detalle", "Simular", "Informe"):
+                        elif nombre == "Informe e IA":
+                            st.caption("Confirma los datos del caso para generar el informe PDF.")
+                        elif nombre != "Resumen":
                             st.info("Completa y confirma los datos desde la evaluación guiada para habilitar esta sección.")
-                        elif nombre in ("Resumen", "Indicadores") and c.flujo.iniciado:
-                            if nombre == "Indicadores":
-                                mostrar_tcea(c.expediente, vm.resultado)
-                            mostrar_avisos(c, vm.resultado, resumen=nombre == "Resumen")
+                        if confirmado and nombre == "Indicadores" and vm.sentinel_url:
+                            st.markdown(sentinel_link_html(vm.sentinel_url), unsafe_allow_html=True)
+                        if nombre == "Informe e IA":
+                            st.divider()
+                            panel_ia()
     if c.vista == "ESTRATEGIA" and os.environ.get("TRIPLE_T_HERRAMIENTAS_DEV", "").lower() == "true":
         mostrar_estrategia()
