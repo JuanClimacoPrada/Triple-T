@@ -23,7 +23,7 @@ su propia evaluación y sus nueve resultados.
    escribe una justificación breve sin datos personales. Confirma o cancela.
    El registro guarda la revisión, hora de Lima, condiciones, supuestos,
    evaluación y justificación dentro de la sesión.
-5. Abre **Informe** y prepara el PDF. Incluye las nueve combinaciones,
+5. Abre **Informe e IA** y prepara el PDF. Incluye las nueve combinaciones,
    ponderación, consecuencia comparativa, recomendación y elección vigente.
    Una edición del caso, de costos, de evidencia o de la matriz invalida la
    elección y el informe. También se comprueba la versión de reglas y ponderación.

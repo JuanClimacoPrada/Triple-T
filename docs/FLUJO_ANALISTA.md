@@ -6,21 +6,22 @@ puntuación de la aplicación procede del expediente y del motor local.
 
 | Área | Cambio | Archivos principales |
 | --- | --- | --- |
-| Navegación | Análisis, Expediente, Historial y Configuración tienen destinos propios. El resumen reúne cifras, avisos prioritarios, alternativas y elección. | `ui_flujo.py`, `ui_chat.py`, `triple_t_pro_layout.py`, `triple_t_pro_styles.css` |
+| Navegación | Menú lateral compacto para Análisis, Expediente, Historial y Criterios. El Resumen muestra las cifras esenciales y accesos directos a Alternativas e Indicadores. | `ui_flujo.py`, `ui_chat.py`, `triple_t_pro_layout.py`, `triple_t_pro_styles.css` |
 | Herramientas de prueba | Los casos sintéticos, la comparación tecnológica, la PD ilustrativa y el score simulado quedan en Desarrollo. La pestaña Indicadores conserva un enlace secundario a Sentinel. | `ui_flujo.py`, `ui_riesgo.py` |
-| Alternativas | La acción Analizar abre un único detalle con tres escenarios, gráfico del saldo, desglose de puntos, alertas y selección. La matriz de nueve resultados se abre aparte. | `ui_alternativas.py`, `servicios/alternativas.py`, `experiencia/comparador.py` |
+| Alternativas | La acción Analizar abre un único detalle con tres escenarios, desglose de puntos, alertas y selección. La matriz de nueve resultados se abre aparte. | `ui_alternativas.py`, `servicios/alternativas.py`, `experiencia/comparador.py` |
 | Elección | La justificación requiere al menos tres palabras distintas de tres o más letras. Se conservan fecha, condiciones, puntuación y justificación en el informe vigente. | `experiencia/comparador.py`, `servicios/reporte.py` |
-| Indicadores | DTI y umbral, capacidad y saldo con causas concretas y acciones para los pendientes. La interpretación distingue saldo positivo, saldo cero y déficit. | `experiencia/tarjetas.py`, `ui_flujo.py`, `servicios/alternativas.py` |
+| Indicadores | Uso de capacidad, margen frente al umbral DTI, costo y alertas al confirmar los datos. Verde indica margen o saldo favorable y rojo identifica exceso o déficit. | `experiencia/tarjetas.py`, `triple_t_pro_layout.py`, `ui_flujo.py` |
+| Gráficos y Detalle | Gráficos reúne la deuda, composición de cuotas, uso del ingreso, simulación y escenarios por alternativa. Detalle concentra el cronograma, la exportación CSV y el sustento disponible. | `visualizaciones.py`, `ui_resultados.py`, `ui_flujo.py` |
 | TCEA | Diagnóstico por costo, pagador, desembolso, vencimiento y flujo. El acceso abre el formulario de costos y fechas. Guardar recalcula y actualiza la revisión. | `servicios/costos.py`, `servicios/finanzas.py`, `servicios/reglas.py`, `servicios/simulacion.py`, `ui_chat.py` |
 
 ## Uso habitual
 
 Confirma el expediente en la evaluación guiada. En **Resumen**, revisa las
-cifras y pulsa **Analizar alternativa** en la tarjeta que quieres inspeccionar.
+cifras y pulsa **Ver alternativas**. En el catálogo, pulsa **Analizar alternativa** en la tarjeta que quieres inspeccionar.
 En el detalle, revisa cómo cambia el saldo con la caída de ingresos, el costo
 frente a la solicitud original y el índice ponderado. Para comparar las nueve
 filas, vuelve al catálogo y abre la matriz general. Selecciona una alternativa
-en su detalle, registra el motivo y prepara el PDF en **Informe**.
+en su detalle, registra el motivo y prepara el PDF en **Informe e IA**.
 
 En **Indicadores**, los avisos muestran qué dato impide el cálculo y el acceso
 para resolverlo. En costos, deja en blanco un importe desconocido, o registra
@@ -35,7 +36,7 @@ operativa por defecto oculta ese espacio.
 
 ## Gemini y el aviso de conexión
 
-El consentimiento se configura una vez en **Configuración → Asistente
+El consentimiento se configura una vez en **Informe e IA → Asistente
 conversacional**. Se mantiene durante la sesión y puede retirarse allí. El chat
 muestra el estado del asistente. Los saludos, agradecimientos y pedidos básicos
 de ayuda se atienden localmente. Las consultas sustantivas admitidas conservan

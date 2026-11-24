@@ -34,7 +34,7 @@ disponible y estado de revisión. Escenarios, gráficos, cronograma y PDF reutil
 el motor Python. Solo crédito personal en PEN.
 
 **Toda la captura y el procesamiento documental funcionan sin Gemini.** En
-Configuración se puede consentir el uso de Gemini para interpretar consultas de demostración
+**Informe e IA** se puede consentir el uso de Gemini para interpretar consultas de demostración
 durante la captura y el análisis. Python valida entidades, calcula los
 indicadores y pide confirmación para aplicar cambios propuestos.
 
@@ -63,7 +63,7 @@ disponible siempre.
    Define `GEMINI_API_KEY`, `GEMINI_MODEL` y `GEMINI_FREE_TIER_CONFIRMED = true`
    únicamente tras verificar acceso gratuito. También se admiten variables de entorno.
    No compartas la clave en chat, GitHub, capturas ni informes.
-4. Abre **Configuración → Asistente conversacional**, lee el aviso y marca el
+4. Abre **Informe e IA → Asistente conversacional**, lee el aviso y marca el
    consentimiento. Retira esa marca para volver al asistente local. El permiso
    queda vigente durante la sesión, incluso al iniciar otro expediente.
 

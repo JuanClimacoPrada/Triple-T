@@ -1,5 +1,4 @@
 """Comparador de condiciones del préstamo y registro de la elección humana."""
-import pandas as pd
 import streamlit as st
 
 from experiencia.comparador import (
@@ -12,6 +11,7 @@ from experiencia.comparador import (
 )
 from servicios.alternativas import Alternativa, NOMBRES, PESOS, efectos_principales, interpretar_saldo
 from triple_t_pro_layout import section_title
+from visualizaciones import estado_saldo
 
 
 def dinero(valor):
@@ -82,11 +82,11 @@ def analizar_alternativa(c, codigo):
     st.session_state.pop("matriz_crediticia_visible", None)
 
 
-def tarjeta(c, evaluacion, base, ambito):
+def tarjeta(c, evaluacion, base):
     alternativa = evaluacion.alternativa
     cifras = evaluacion.escenarios[1].resultado.cifras
     beneficio, desventaja = efectos_principales(evaluacion, base)
-    with st.container(border=True, gap="small", key=f"tt_alt_card_{ambito}_{alternativa.codigo}"):
+    with st.container(border=True, gap="small", key=f"tt_alt_card_comparador_{alternativa.codigo}"):
         st.markdown(f"**{titulo_alternativa(c, alternativa)}**")
         st.caption(condiciones(alternativa))
         st.markdown(f"Cuota mensual **{dinero(cifras.get('cuota_base'))}**")
@@ -100,7 +100,7 @@ def tarjeta(c, evaluacion, base, ambito):
         st.caption(beneficio)
         st.caption(desventaja)
         st.button(f"Analizar alternativa {alternativa.codigo}",
-                  key=f"{ambito}_analizar_{alternativa.codigo}", width="stretch",
+                  key=f"comparador_analizar_{alternativa.codigo}", width="stretch",
                   on_click=analizar_alternativa, args=(c, alternativa.codigo))
 
 
@@ -126,7 +126,6 @@ def detalle_resultado(c, evaluacion, base):
     for columna, escenario in zip(st.columns(3, gap="small"), evaluacion.escenarios):
         with columna:
             tarjeta_escenario(escenario)
-    graficar_saldo(evaluacion)
     if evaluacion.desfavorable and evaluacion.desfavorable is not evaluacion.escenarios[1]:
         st.caption(interpretar_saldo(evaluacion.desfavorable.resultado))
     with st.expander("Comparación con la solicitud original y puntuación por criterio"):
@@ -255,56 +254,26 @@ def metodologia(comparativa):
                       for criterio, peso in PESOS.items()], hide_index=True, width="stretch")
 
 
-def tarjetas_alternativas(c, comparativa, ambito):
+def tarjetas_alternativas(c, comparativa):
     st.info(comparativa.recomendacion)
     for columna, evaluacion in zip(st.columns(3, gap="small"), comparativa.alternativas):
         with columna:
-            tarjeta(c, evaluacion, comparativa.base, ambito)
-
-
-def mostrar_resumen_alternativas(c):
-    section_title("Comparación de alternativas", "scale")
-    try:
-        comparativa = obtener(c)
-    except ValueError as error:
-        st.info(str(error))
-        return
-    tarjetas_alternativas(c, comparativa, "resumen")
-
-
-def mostrar_puntuaciones(c):
-    try:
-        comparativa = obtener(c)
-    except ValueError:
-        return
-    st.markdown("**Puntuación académica de las alternativas**")
-    st.dataframe([{"Alternativa": e.alternativa.codigo, "Puntuación": puntuacion(e.puntaje_global),
-                   "Estado": ("Pendiente" if e.puntaje_global is None else "Preliminar" if e.preliminar else "Calculada")}
-                  for e in comparativa.alternativas], hide_index=True, width="stretch")
+            tarjeta(c, evaluacion, comparativa.base)
 
 
 def tarjeta_escenario(escenario):
     cifras = escenario.resultado.cifras
     saldo = cifras.get("saldo_post_cuota")
+    estado, color = estado_saldo(saldo)
     nombre = escenario.nombre.lower()
     with st.container(border=True, gap="small", key=f"tt_escenario_{nombre}"):
         st.markdown(f"**{escenario.nombre}** · caída de {escenario.caida:.0f}%")
         st.caption(f"Ingreso {dinero(cifras.get('ingresos_admisibles'))} · DTI {porcentaje(cifras.get('dti_total'))}")
-        st.markdown(f"Saldo **{dinero(saldo)}** · {puntuacion(escenario.puntaje)}")
+        saldo_texto = "Saldo pendiente" if saldo is None else f"{estado}: {dinero(saldo)}"
+        st.markdown(f":{color}[**{saldo_texto}**]")
+        st.caption(puntuacion(escenario.puntaje))
         if saldo is not None and saldo < 0:
             st.caption("El ingreso no cubre todos los gastos y pagos.")
-
-
-def graficar_saldo(evaluacion):
-    filas = []
-    for escenario in evaluacion.escenarios:
-        saldo = escenario.resultado.cifras.get("saldo_post_cuota")
-        if saldo is not None:
-            filas.append({"Escenario": escenario.nombre, "Saldo mensual (S/)": float(saldo)})
-    if filas:
-        st.caption("Saldo después de gastos y cuotas según el escenario")
-        st.bar_chart(pd.DataFrame(filas), x="Escenario", y="Saldo mensual (S/)", color="#2469c6", sort=False, height=170,
-                     alt="Saldo mensual después de gastos y cuotas para cada escenario de ingreso")
 
 
 def volver_al_listado(c):
@@ -348,7 +317,7 @@ def mostrar_alternativas(c):
         mostrar_matriz(comparativa)
         return
     section_title("Alternativas del préstamo", "scale")
-    tarjetas_alternativas(c, comparativa, "comparador")
+    tarjetas_alternativas(c, comparativa)
     st.button("Ver matriz general de nueve escenarios", icon=":material/table_chart:", on_click=abrir_matriz, args=(c,))
     if st.button("Restablecer alternativas y caídas iniciales", key="regenerar_alternativas"):
         try:
