@@ -21,12 +21,11 @@ from ui_riesgo import mostrar_riesgo
 from ui_alternativas import mostrar_alternativas, mostrar_seleccion
 from ui_chat import editor_costos, editor_anotaciones
 from servicios.costos import diagnostico_tcea
-from servicios.alternativas import interpretar_saldo
 from experiencia.comparador import obtener
 from experiencia.sugerencia import sugerencia_comparativa
 from visualizaciones import mostrar_graficos
 from triple_t_pro_layout import (construir_vm, sentinel_config, load_styles, hero_html,
-    message_html, steps_html, section_title, render_dashboard_area, sentinel_link_html, sugerencia_html)
+    message_html, steps_html, section_title, render_dashboard_area, sentinel_link_html, status_banner_html)
 
 TAB_POR_VISTA = {"ALTERNATIVAS": "Alternativas", "SIMULAR": "Simular", "DETALLE": "Detalle",
                  "GRAFICO": "Gráficos", "PDF": "Informe e IA", "COSTOS": "Detalle"}
@@ -286,27 +285,35 @@ def mostrar_avisos(c, r):
     avisos = avisos_evaluacion(c, r)
     if not avisos:
         return
-    section_title("Alertas financieras y documentales", "file")
+    section_title("Alertas financieras y documentales", "alert")
     acciones = set()
-    for indice, (titulo, descripcion, ruta) in enumerate(avisos):
-        with st.container(border=True):
-            st.markdown(f"**{titulo}**")
-            st.text(descripcion)
-            if ruta and ruta not in acciones:
-                boton(ACCIONES_AVISO[ruta], ruta, key=f"aviso_{indice}")
-                acciones.add(ruta)
+    for indice, aviso in enumerate(avisos):
+        tono = {"rojo": "red", "verde": "green"}.get(aviso.tono, "blue")
+        st.markdown(status_banner_html(aviso.titulo, aviso.descripcion, tono), unsafe_allow_html=True)
+        if aviso.ruta and aviso.ruta not in acciones:
+            boton(ACCIONES_AVISO[aviso.ruta], aviso.ruta, key=f"aviso_{indice}", icon=":material/arrow_forward:")
+            acciones.add(aviso.ruta)
 
 
 def mostrar_tcea(exp, resultado):
     pendientes = diagnostico_tcea(exp, resultado)
     if resultado.tcea is not None and not pendientes:
-        st.markdown(f"**TCEA referencial {resultado.tcea:.2%}**")
+        st.markdown(status_banner_html(f"TCEA referencial {resultado.tcea:.2%}",
+                    "Calculada con los costos y vencimientos registrados."), unsafe_allow_html=True)
         return
-    with st.container(border=True, key="tt_tcea_notice"):
-        st.markdown("**TCEA pendiente**")
-        for pendiente in pendientes:
-            st.text(pendiente)
-        boton("Completar costos y fechas", "COSTOS", key="costos_tcea")
+    st.markdown(status_banner_html("TCEA pendiente", "\n".join(pendientes)), unsafe_allow_html=True)
+    boton("Completar costos y fechas", "COSTOS", key="costos_tcea", icon=":material/calendar_month:")
+
+
+def notificar_sugerencia(c):
+    volver_a_ver = st.button("Ver sugerencia", icon=":material/lightbulb:", key="tt_ver_sugerencia")
+    if volver_a_ver or st.session_state.get("tt_sugerencia_revision") != c.revision:
+        try:
+            sugerencia = sugerencia_comparativa(obtener(c))
+        except ValueError:
+            sugerencia = "Causa, primero revisaría las condiciones del caso original para poder comparar las opciones."
+        st.toast(f"**Sugerencia de Triple-T**\n\n{sugerencia}", icon=":material/lightbulb:", duration=20)
+        st.session_state.tt_sugerencia_revision = c.revision
 
 
 def resultados(c, seccion):
@@ -314,15 +321,11 @@ def resultados(c, seccion):
     if r is None:
         return
     if seccion == "Resumen":
-        st.write(interpretar_saldo(r))
-        try:
-            sugerencia = sugerencia_comparativa(obtener(c))
-        except ValueError:
-            sugerencia = "Causa, primero revisaría las condiciones del caso original para poder comparar las opciones."
-        st.markdown(sugerencia_html(sugerencia), unsafe_allow_html=True)
-        boton("Ver alternativas", "ALTERNATIVAS", type="primary", icon=":material/compare_arrows:")
-        if avisos_evaluacion(c, r):
-            boton("Consultar alertas en Indicadores", "INDICADORES")
+        with st.container(horizontal=True):
+            boton("Ver alternativas", "ALTERNATIVAS", type="primary", icon=":material/compare_arrows:")
+            if avisos_evaluacion(c, r):
+                boton("Consultar alertas en Indicadores", "INDICADORES", icon=":material/info:")
+            notificar_sugerencia(c)
     elif seccion == "Indicadores":
         mostrar_avisos(c, r)
         section_title("Costo del financiamiento", "wallet")
@@ -415,8 +418,13 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
     if pagina == "DESARROLLO" and os.environ.get("TRIPLE_T_HERRAMIENTAS_DEV", "").lower() == "true":
         herramientas_dev(c, vm, pedir_caso)
         return
+    confirmado = c.flujo.etapa == "RESULTADOS" and not c.pendiente
+    ampliar_alternativas = confirmado and st.session_state.get("pestana_analisis") == "Alternativas"
     with st.container(key="tt_workspace"):
-        chat, dashboard = st.columns([1, 1.65], gap="medium")
+        if ampliar_alternativas:
+            dashboard, chat = st.container(), st.container()
+        else:
+            chat, dashboard = st.columns([1, 1.65], gap="medium")
         with chat:
             with st.container(key="tt_chat_panel", border=True):
                 section_title("Evaluación guiada", "bot")
@@ -470,7 +478,6 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                 if st.session_state.get("pestana_analisis") == "Informe":
                     st.session_state.pestana_analisis = "Informe e IA"
                 pestanas = st.tabs(nombres, key="pestana_analisis", on_change=cambiar_pestana, args=(c,))
-                confirmado = c.flujo.etapa == "RESULTADOS" and not c.pendiente
                 for nombre, pestana in zip(nombres, pestanas):
                     with pestana, st.container(key="panel_" + nombre):
                         if nombre == "Resumen" or (confirmado and nombre in ("Indicadores", "Gráficos")):

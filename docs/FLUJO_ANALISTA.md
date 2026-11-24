@@ -6,27 +6,29 @@ puntuación de la aplicación procede del expediente y del motor local.
 
 | Área | Cambio | Archivos principales |
 | --- | --- | --- |
-| Navegación | Menú lateral compacto para Análisis, Expediente, Historial y Criterios. El Resumen muestra las cifras esenciales y accesos directos a Alternativas e Indicadores. | `ui_flujo.py`, `ui_chat.py`, `triple_t_pro_layout.py`, `triple_t_pro_styles.css` |
+| Navegación | Menú lateral compacto para Análisis, Expediente, Historial y Criterios. El Resumen muestra las cifras esenciales y permite consultar el resto de los datos de la solicitud. | `ui_flujo.py`, `ui_chat.py`, `triple_t_pro_layout.py`, `triple_t_pro_styles.css` |
 | Herramientas de prueba | Los casos sintéticos, la comparación tecnológica, la PD ilustrativa y el score simulado quedan en Desarrollo. La pestaña Indicadores conserva un enlace secundario a Sentinel. | `ui_flujo.py`, `ui_riesgo.py` |
-| Alternativas | La acción Analizar abre un único detalle con tres escenarios, desglose de puntos, alertas y selección. La matriz de nueve resultados se abre aparte. | `ui_alternativas.py`, `servicios/alternativas.py`, `experiencia/comparador.py` |
+| Alternativas | Comparador a ancho completo con tres tarjetas y una tabla del escenario esperado. La acción Analizar abre el detalle de la opción. La matriz de nueve resultados se abre aparte. | `ui_alternativas.py`, `ui_alternativas.css`, `servicios/alternativas.py`, `experiencia/comparador.py` |
 | Elección | La justificación requiere al menos tres palabras distintas de tres o más letras. Se conservan fecha, condiciones, puntuación y justificación en el informe vigente. | `experiencia/comparador.py`, `servicios/reporte.py` |
-| Indicadores | Uso de capacidad, margen frente al umbral DTI, costo y alertas al confirmar los datos. Verde indica margen o saldo favorable y rojo identifica exceso o déficit. | `experiencia/tarjetas.py`, `triple_t_pro_layout.py`, `ui_flujo.py` |
+| Indicadores | Uso de capacidad, margen frente al umbral DTI, costo y alertas al confirmar los datos. Un icono y un texto refuerzan cada estado. Verde indica una condición favorable, rojo un hallazgo adverso y azul información o datos pendientes. | `experiencia/tarjetas.py`, `triple_t_pro_layout.py`, `ui_flujo.py` |
 | Gráficos y Detalle | Gráficos reúne la deuda, composición de cuotas, uso del ingreso, simulación y escenarios por alternativa. Detalle concentra el cronograma, la exportación CSV y el sustento disponible. | `visualizaciones.py`, `ui_resultados.py`, `ui_flujo.py` |
 | TCEA | Diagnóstico por costo, pagador, desembolso, vencimiento y flujo. El acceso abre el formulario de costos y fechas. Guardar recalcula y actualiza la revisión. | `servicios/costos.py`, `servicios/finanzas.py`, `servicios/reglas.py`, `servicios/simulacion.py`, `ui_chat.py` |
 
 ## Uso habitual
 
-En **Resumen**, verifica los datos de la solicitud, incluido el ingreso declarado,
-el monto, la TEA y el plazo. Al confirmar el expediente, aparecen los resultados y
-la sugerencia de Triple-T. La sugerencia se genera localmente con los escenarios
+En **Resumen**, verifica el ingreso declarado, el monto, la TEA y el plazo.
+Abre **Ver todos los datos de la solicitud** para revisar los gastos, deudas,
+historial, respaldo, patrimonio y condiciones de desembolso. Al confirmar el
+expediente, aparecen los resultados y una notificación de Triple-T que puedes
+reabrir con **Ver sugerencia**. La sugerencia se genera localmente con los escenarios
 calculados. Explica qué opción revisaría primero, qué se gana y qué se tendría que
 revisar antes de elegir. Si falta información o ninguna opción deja margen,
 propone revisar los datos o las condiciones.
 
-Pulsa **Ver alternativas**. En el catálogo, pulsa **Analizar alternativa** en la
-tarjeta que quieres inspeccionar. Las etiquetas de saldo y DTI muestran por separado
-el margen mensual y el cumplimiento del umbral académico, junto al puntaje y el
-conteo de escenarios que cumplen los dos criterios.
+Pulsa **Ver alternativas**. Las tres tarjetas y la tabla muestran el escenario
+esperado. Cuando las tres opciones tienen déficit, el tablero destaca la de menor
+faltante mensual y explica el resultado. Pulsa **Analizar alternativa** en la
+tarjeta que quieres inspeccionar.
 En el detalle, revisa cómo cambia el saldo con la caída de ingresos, el costo
 frente a la solicitud original y el índice ponderado. Para comparar las nueve
 filas, vuelve al catálogo y abre la matriz general. Selecciona una alternativa

@@ -1,7 +1,33 @@
 """ViewModels de presentación; no modifica fórmulas ni interpreta documentos."""
+from dataclasses import dataclass
+from decimal import Decimal
+
 from experiencia.evidencia import pendientes_documentales
 from experiencia.flujo import faltan
 from experiencia.preguntas import ETIQUETAS, RAZONES
+
+
+@dataclass(frozen=True)
+class Aviso:
+    titulo: str
+    descripcion: str
+    ruta: str | None = None
+    tono: str = "azul"
+
+
+def estado_flujo_mensual(resultado):
+    """Describe el saldo posterior al pago cuando el motor pudo calcularlo."""
+    saldo = resultado.cifras.get("saldo_post_cuota")
+    if saldo is None:
+        return None
+    if saldo == 0:
+        return Aviso("Sin margen mensual", "Los ingresos cubren los gastos y las cuotas, con un saldo de S/ 0.00.")
+    importe = "menos de S/ 0.01" if abs(saldo) < Decimal("0.01") else f"S/ {abs(saldo):,.2f}"
+    if saldo < 0:
+        return Aviso("Déficit mensual", f"Faltarían {importe} al mes para cubrir todos los gastos y las cuotas.",
+                     "ALTERNATIVAS", "rojo")
+    return Aviso("Saldo mensual positivo", f"Quedarían {importe} al mes después de cubrir los gastos y las cuotas.",
+                 tono="verde")
 
 
 def avisos_evaluacion(c, resultado):
@@ -10,34 +36,52 @@ def avisos_evaluacion(c, resultado):
     campos = faltan(c)
     if campos:
         motivos = " ".join(f"{ETIQUETAS[campo]}. {RAZONES[campo]}" for campo in campos)
-        avisos.append(("Datos por completar", motivos, "CONTINUAR"))
+        avisos.append(Aviso("Datos por completar", motivos, "CONTINUAR"))
     for a in resultado.reglas:
         regla, mensaje = a["regla"], a["mensaje"]
-        if regla in ("RN-13", "VAL-01", "RN-08") and (regla == "RN-13" or campos):
+        if regla == "RN-13" or (regla == "VAL-01" and campos) or (regla == "RN-08" and "descuento_planilla" in campos):
             continue
         if regla == "RN-07" and a["nivel"] == "discrepancia":
-            avisos.append(("Ingresos por conciliar", mensaje + " Revisa las boletas y confirma la fuente que corresponde usar.", "ACLARAR_INGRESO"))
-        elif regla in ("VAL-05/07", "RN-05", "RN-04"):
-            avisos.append(("Respaldo de ingresos", mensaje + " Revisa las transcripciones y conserva un registro por mes.", "BOLETAS"))
+            avisos.append(Aviso("Ingresos por conciliar", mensaje + " Confirma qué fuente de ingresos corresponde usar.",
+                                "ACLARAR_INGRESO", "rojo"))
+        elif regla == "VAL-05/07":
+            avisos.append(Aviso("Boletas de un mismo mes", mensaje, "BOLETAS"))
+        elif regla == "RN-05":
+            avisos.append(Aviso("Respaldo de ingresos", mensaje, "BOLETAS"))
+        elif regla == "RN-04":
+            avisos.append(Aviso("Historial insuficiente", mensaje, "BOLETAS"))
         elif regla == "RN-03":
-            avisos.append(("Cuotas sobre el umbral académico", mensaje + " Compara otras condiciones de monto o plazo.", "ALTERNATIVAS"))
+            dti = resultado.cifras.get("dti_total")
+            detalle = (f"Las cuotas representan el {dti:.2%} del ingreso admisible. "
+                       f"El umbral académico es {c.config.umbral_dti:.2%}.") if dti is not None else mensaje
+            avisos.append(Aviso("Cuotas sobre el umbral académico", detalle, "ALTERNATIVAS", "rojo"))
         elif regla == "RN-02":
-            avisos.append(("Déficit mensual", mensaje + " Los ingresos calculados no cubren todos los gastos y cuotas en este escenario.", "ALTERNATIVAS"))
+            avisos.append(estado_flujo_mensual(resultado) or Aviso("Déficit mensual", mensaje, "ALTERNATIVAS", "rojo"))
         elif regla == "VAL-03":
-            avisos.append(("DTI sin base de cálculo", "El ingreso admisible es S/ 0. Confirma si ese ingreso es correcto para el escenario evaluado.", "EXPEDIENTE"))
+            avisos.append(Aviso("Ingreso admisible de S/ 0", "El cálculo de endeudamiento requiere un ingreso mayor que cero.",
+                                "EXPEDIENTE", "rojo"))
         elif regla == "RN-10":
-            avisos.append(("Continuidad de ingresos", mensaje + " Verifica los meses declarados de empleo o actividad.", "EXPEDIENTE"))
+            avisos.append(Aviso("Continuidad de ingresos", mensaje + " Verifica los meses declarados de empleo o actividad.",
+                                "EXPEDIENTE", "rojo" if a["nivel"] == "relevante" else "azul"))
         elif regla == "RN-11":
-            avisos.append(("Historial de pagos", mensaje + " Confirma el historial y los días de atraso declarados.", "EXPEDIENTE"))
+            mora = a["nivel"] == "relevante"
+            avisos.append(Aviso("Mora declarada" if mora else "Historial de pagos", mensaje, "EXPEDIENTE",
+                                "rojo" if mora else "azul"))
         else:
-            avisos.append(("Dato por revisar", mensaje, "EXPEDIENTE" if a["nivel"] == "pendiente" else None))
+            avisos.append(Aviso("Dato por revisar", mensaje, "EXPEDIENTE" if a["nivel"] == "pendiente" else None,
+                                "rojo" if a["nivel"] == "relevante" else "azul"))
     documentales = pendientes_documentales(c)
     for aviso in documentales:
-        if aviso.startswith("Respaldo de ingresos") and any(t == "Respaldo de ingresos" for t, _, _ in avisos):
+        if aviso.startswith("Respaldo de ingresos") and any(a.titulo == "Respaldo de ingresos" for a in avisos):
             continue
         ruta = "PATRIMONIO" if aviso.startswith("Patrimonio declarado") else "OTRO_INGRESO" if "generales o patrimoniales" in aviso else "BOLETAS"
-        avisos.append(("Documentación", aviso + ".", ruta))
-    return avisos
+        avisos.append(Aviso("Documentación", aviso + ".", ruta))
+    if resultado.cifras.get("continuidad"):
+        avisos.append(Aviso("Continuidad de ingresos favorable",
+                            "La antigüedad declarada alcanza los 12 meses de referencia académica. La capacidad de pago se evalúa con ingresos, gastos y cuotas.",
+                            tono="verde"))
+    prioridad = {"rojo": 0, "azul": 1, "verde": 2}
+    return sorted(dict.fromkeys(avisos), key=lambda aviso: prioridad[aviso.tono])
 
 
 def estado_revision(c, r):
