@@ -10,11 +10,12 @@ import re
 from urllib.parse import urlsplit
 import streamlit as st
 from conversacion.gestor import actual, resultado_para
-from experiencia.tarjetas import estado_revision
+from experiencia.preguntas import legible
+from experiencia.tarjetas import estado_flujo_mensual, estado_revision
 from servicios.finanzas import cronograma
 from servicios.proveedores_riesgo import SENTINEL_REFERENCIA
 
-CSS_FILE = Path(__file__).with_name("triple_t_pro_styles.css")
+CSS_FILES = ("triple_t_pro_styles.css", "ui_alternativas.css")
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,9 @@ class TripleTViewModel:
     preliminary: bool = True
     current_step: int = 1
     request_cards: list[MetricCard] = field(default_factory=list)
+    request_details: list[MetricCard] = field(default_factory=list)
+    request_charges: list[dict] = field(default_factory=list)
+    request_dates: tuple[str, ...] = ()
     simulated: bool = False
     metrics: list = field(default_factory=list)
     indicators: list = field(default_factory=list)
@@ -41,6 +45,7 @@ class TripleTViewModel:
     distribution_note: str = "Completa ingresos, gastos y cuotas para ver su distribución."
     sentinel_url: str | None = None
     state_label: str = "Información pendiente"
+    monthly_status: tuple[str, str, str] | None = None
 
 
 def sentinel_config(secrets=None):
@@ -90,11 +95,55 @@ def tarjetas_solicitud(exp):
     ]
 
 
+def detalle_solicitud(exp, propiedad):
+    continuidad = "Sin registrar" if exp.estabilidad_meses is None else f"{exp.estabilidad_meses} meses"
+    mora = ("No aplica" if exp.historial == "SIN_MORA_DECLARADA" else "Sin registrar") if exp.dias_mora is None else f"{exp.dias_mora} días"
+    planilla = "Sin otras cuotas" if exp.otras_cuotas == 0 else legible(exp.descuento_planilla)
+    bien = exp.patrimonio or {"SI": "Bien declarado", "NO": "No declara bienes", "DESCONOCIDO": "Desconocido"}.get(propiedad, "Sin registrar")
+    producto = "Crédito " + exp.tipo_credito if exp.tipo_credito in ("vehicular", "hipotecario", "empresarial") else legible(exp.tipo_credito)
+    fecha = "Sin registrar" if exp.fecha_desembolso is None else exp.fecha_desembolso.strftime("%d/%m/%Y")
+    return [
+        MetricCard("Producto", producto, icon="file"),
+        MetricCard("Moneda", "Soles (PEN)" if exp.moneda == "PEN" else exp.moneda, icon="banknote"),
+        MetricCard("Gastos mensuales", dinero(exp.gastos), icon="wallet"),
+        MetricCard("Cuotas de otros préstamos", dinero(exp.otras_cuotas), icon="wallet"),
+        MetricCard("Cuotas descontadas del ingreso", planilla, icon="banknote"),
+        MetricCard("Continuidad de ingresos", continuidad, icon="calendar"),
+        MetricCard("Historial de pagos", legible(exp.historial), icon="check"),
+        MetricCard("Días de atraso", mora, icon="clock"),
+        MetricCard("Respaldo de ingresos", f"{len(exp.evidencias)} boletas o registros",
+                   f"{len(exp.respaldos)} otros respaldos registrados (ingresos y patrimonio)", icon="file"),
+        MetricCard("Fuente de ingreso ante discrepancia",
+                   {"DECLARADO": "Ingreso declarado", "DOCUMENTAL": "Promedio documental"}.get(exp.resolucion_ingreso, "Sin elección registrada"),
+                   exp.justificacion_ingreso, icon="info"),
+        MetricCard("Patrimonio declarado", bien, icon="layers"),
+        MetricCard("Valor patrimonial declarado", dinero(exp.patrimonio_valor),
+                   exp.patrimonio_fuente if exp.patrimonio_valor is not None else "", icon="banknote"),
+        MetricCard("Cargos del crédito", f"{len(exp.cargos)} registrados",
+                   "Costos completos según el analista" if exp.cargos_completos else "Costos por confirmar", icon="wallet"),
+        MetricCard("Fecha de desembolso", fecha, icon="calendar"),
+        MetricCard("Fechas de pago", f"{len(exp.fechas_pago)} registradas",
+                   {"CONFIRMADAS": "Fechas confirmadas por el analista", "PROPUESTAS": "Fechas propuestas",
+                    "PROYECTADAS": "Fechas proyectadas"}.get(exp.origen_fechas_pago, ""), icon="calendar"),
+        MetricCard("Fecha del expediente", exp.fecha.strftime("%d/%m/%Y"), icon="calendar"),
+        MetricCard("Observaciones de la solicitud", exp.observacion or "Sin registrar", icon="file"),
+    ]
+
+
 def construir_vm(c, sentinel_url=None):
     confirmado = bool(c.flujo and c.flujo.revision_confirmada == c.revision and c.resultado is not None and not c.pendiente)
     exp, r = actual(c) if confirmado else (c.expediente, resultado_para(c, c.expediente))
+    solicitud = c.expediente
     vm = TripleTViewModel(preliminary=not confirmado, sentinel_url=url_segura(sentinel_url),
-                          request_cards=tarjetas_solicitud(c.expediente), simulated=bool(confirmado and c.escenario))
+                          request_cards=tarjetas_solicitud(solicitud),
+                          request_details=detalle_solicitud(solicitud, c.flujo.propiedad if c.flujo else None),
+                          request_charges=[
+                              {"Concepto": cargo.concepto, "Importe": dinero(cargo.importe),
+                               "Frecuencia": {"MENSUAL": "Mensual", "INICIAL": "Al desembolso"}.get(cargo.momento, "Por confirmar"),
+                               "Pagador": {"SOLICITANTE": "Solicitante", "TERCERO": "Tercero", "NO_APLICA": "No aplica"}.get(cargo.pagador, "Por confirmar")}
+                              for cargo in solicitud.cargos],
+                          request_dates=tuple(fecha.strftime("%d/%m/%Y") for fecha in solicitud.fechas_pago),
+                          simulated=bool(confirmado and c.escenario))
     etapas = {"INICIO":1, "CONDICIONES":1, "FINANZAS":1, "HISTORIAL":1, "EVIDENCIA_INGRESOS":2,
               "EVIDENCIA_PATRIMONIO":2, "REVISION_DATOS":3, "RESULTADOS":4}
     vm.current_step = 5 if confirmado and c.escenario else etapas.get(c.flujo.etapa if c.flujo else "INICIO", 1)
@@ -121,12 +170,12 @@ def construir_vm(c, sentinel_url=None):
     color_saldo = "blue"
     estado_saldo = "Después de gastos y cuotas"
     if confirmado and saldo is not None:
-        color_saldo = "red" if saldo < 0 else "green" if saldo > 0 else "amber"
+        color_saldo = "red" if saldo < 0 else "green" if saldo > 0 else "blue"
         estado_saldo = "Déficit mensual" if saldo < 0 else "Margen mensual positivo" if saldo > 0 else "Sin margen mensual"
     capacidad = cifra.get("capacidad_neta")
     dti_texto = "No calculable" if dti_sin_ingreso else "Pendiente" if dti is None else f"{dti:.1%}"
     vm.metrics = [
-        MetricCard("Cuota mensual estimada", dinero(pago), detalle_pago, "blue", "wallet"),
+        MetricCard("Cuota mensual estimada", dinero(pago), detalle_pago, "blue", "calendar"),
         MetricCard("Capacidad mensual", dinero(capacidad), "Disponible antes del nuevo pago", "cyan", "wallet"),
         MetricCard("Endeudamiento (DTI)", dti_texto, estado_dti, color_dti, "chart"),
         MetricCard("Saldo después del pago", dinero(saldo), estado_saldo, color_saldo, "layers"),
@@ -141,13 +190,13 @@ def construir_vm(c, sentinel_url=None):
     else:
         texto_uso = f"{uso:.1%}"
         subtitulo_uso = "Supera la capacidad neta" if uso > 1 else "Consume toda la capacidad neta" if uso == 1 else "Parte de la capacidad neta que consume el pago"
-        color_uso = "red" if uso > 1 else "amber" if uso == 1 else "green"
+        color_uso = "red" if uso > 1 else "blue" if uso == 1 else "green"
     if margen_dti is None:
         texto_margen = "No calculable" if dti_sin_ingreso else "Pendiente"
         estado_margen = "El ingreso admisible es S/ 0" if dti_sin_ingreso else "Requiere un DTI calculable"
         color_margen = "red" if dti_sin_ingreso else "blue"
     elif margen_dti == 0:
-        texto_margen, estado_margen, color_margen = "0.0 pp", "En el umbral", "amber"
+        texto_margen, estado_margen, color_margen = "0.0 pp", "En el umbral", "blue"
     else:
         negativo = margen_dti < 0
         signo = "−" if negativo else "+"
@@ -157,6 +206,13 @@ def construir_vm(c, sentinel_url=None):
     vm.indicators = [MetricCard("Capacidad utilizada", texto_uso, subtitulo_uso, color_uso, "wallet"),
                      MetricCard("Margen frente al umbral DTI", texto_margen, estado_margen, color_margen, "chart")]
     vm.state_label = estado_revision(c, r)
+    if confirmado:
+        flujo = estado_flujo_mensual(r)
+        if flujo:
+            titulo = "Flujo mensual insuficiente" if flujo.tono == "rojo" else flujo.titulo
+            vm.monthly_status = (titulo, flujo.descripcion, {"rojo": "red", "verde": "green"}.get(flujo.tono, "blue"))
+        else:
+            vm.monthly_status = ("Flujo mensual por calcular", "Completa los datos financieros pendientes para estimar cuánto quedará después del pago.", "blue")
     if "cuota_base" in cifra:
         # Comparación teórica a la misma tasa: no crea ofertas ni altera el expediente.
         for meses in sorted(set(min(360, exp.meses + incremento) for incremento in (0, 12, 24))):
@@ -185,12 +241,20 @@ def icon(name):
         "upload": '<path d="M8 17H5a4 4 0 0 1-1-8 7 7 0 0 1 13-3 5 5 0 0 1 2 11h-3M12 21V9m-4 4 4-4 4 4"/>',
         "user": '<circle cx="12" cy="8" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/>',
         "scale": '<path d="M12 3v18m-5 0h10M3 7h18M6 7l-4 8h8Zm12 0-4 8h8Z"/>',
+        "calendar": '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18m-8 6h4"/>',
+        "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+        "banknote": '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+        "check": '<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>',
+        "alert": '<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>',
+        "info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>',
+        "star": '<path d="m12 3 2.8 5.7 6.3.9-4.5 4.4 1 6.3-5.6-3-5.6 3 1-6.3L2.9 9.6l6.3-.9Z"/>',
     }
     return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths.get(name,paths["file"])+"</svg>"
 
 
 def load_styles():
-    st.markdown("<style>" + CSS_FILE.read_text(encoding="utf-8") + "</style>", unsafe_allow_html=True)
+    estilos = "\n".join(Path(__file__).with_name(nombre).read_text(encoding="utf-8") for nombre in CSS_FILES)
+    st.markdown(f"<style>{estilos}</style>", unsafe_allow_html=True)
 
 
 def hero_html(vm):
@@ -213,7 +277,7 @@ def cards_html(cards, *, compactas=False):
     clases = "tt-metrics tt-metrics-compact" if compactas else "tt-metrics"
     partes = []
     for tarjeta in cards:
-        color = tarjeta.accent if tarjeta.accent in ("green", "blue", "cyan", "red", "amber") else "blue"
+        color = tarjeta.accent if tarjeta.accent in ("green", "blue", "cyan", "red") else "blue"
         valor = escape(tarjeta.value).replace("S/ ", "S/&nbsp;")
         subtitulo = f"<small>{escape(tarjeta.subtitle)}</small>" if tarjeta.subtitle else ""
         partes.append(f'<article class="tt-card {color}"><div class="tt-card-label">{icon(tarjeta.icon)}'
@@ -221,10 +285,14 @@ def cards_html(cards, *, compactas=False):
     return f'<div class="{clases}">{"".join(partes)}</div>'
 
 
-def sugerencia_html(texto):
-    return ('<aside class="tt-suggestion" aria-label="Sugerencia de Triple-T">'
-            f'<span class="tt-suggestion-icon">{icon("bot")}</span>'
-            f'<div><strong>Sugerencia de Triple-T</strong><p>{escape(texto)}</p></div></aside>')
+def status_banner_html(titulo, descripcion, tono="blue"):
+    tonos = {"red": ("alert", "Alerta"), "green": ("check", "Favorable"), "blue": ("info", "Información")}
+    tono = tono if tono in tonos else "blue"
+    simbolo, estado = tonos[tono]
+    texto = escape(descripcion).replace("\n", "<br>")
+    return (f'<div class="tt-alert tt-alert--{tono}" role="group" aria-label="{estado}">'
+            f'<span class="tt-alert-icon">{icon(simbolo)}</span><div class="tt-alert-copy">'
+            f'<strong>{escape(titulo)}</strong><p>{texto}</p></div></div>')
 
 
 def bars_html(data):
@@ -280,9 +348,19 @@ def render_dashboard_area(vm, seccion="Resumen"):
         return
     section_title("Datos de la solicitud original" if vm.simulated else "Datos de la solicitud", "file")
     st.markdown(cards_html(vm.request_cards, compactas=True), unsafe_allow_html=True)
+    with st.expander("Ver todos los datos de la solicitud", icon=":material/assignment:"):
+        st.markdown(cards_html(vm.request_details, compactas=True), unsafe_allow_html=True)
+        if vm.request_charges:
+            section_title("Cargos registrados", "wallet")
+            st.dataframe(vm.request_charges, hide_index=True, width="stretch")
+        if vm.request_dates:
+            section_title("Vencimientos registrados", "calendar")
+            st.dataframe([{"Cuota": i, "Fecha": fecha} for i, fecha in enumerate(vm.request_dates, 1)],
+                         hide_index=True, width="stretch", height="auto")
     section_title("Resultado de la simulación" if vm.simulated else "Resultado mensual", "chart")
     if vm.preliminary:
         st.caption("Los indicadores se completan a medida que registras los datos.")
     st.markdown(cards_html(vm.metrics), unsafe_allow_html=True)
-    if not vm.preliminary:
-        st.markdown('<div class="tt-review"><span>Estado de la evaluación</span><strong>'+escape(vm.state_label)+'</strong></div>', unsafe_allow_html=True)
+    if vm.monthly_status:
+        st.markdown(status_banner_html(*vm.monthly_status), unsafe_allow_html=True)
+        st.caption(f"Estado de revisión · {vm.state_label}")
