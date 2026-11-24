@@ -1,4 +1,6 @@
 """Comparador de condiciones del préstamo y registro de la elección humana."""
+from html import escape
+
 import streamlit as st
 
 from experiencia.comparador import (
@@ -82,21 +84,64 @@ def analizar_alternativa(c, codigo):
     st.session_state.pop("matriz_crediticia_visible", None)
 
 
-def tarjeta(c, evaluacion, base):
+def lecturas_financieras(cifras, umbral):
+    saldo = cifras.get("saldo_post_cuota")
+    estado_saldo_texto, color_saldo = estado_saldo(saldo)
+    if saldo is None:
+        estado_saldo_texto = "Faltan datos para estimar el saldo."
+    elif saldo < 0:
+        estado_saldo_texto = "Déficit mensual"
+    elif saldo > 0:
+        estado_saldo_texto = "Queda margen mensual"
+
+    dti = cifras.get("dti_total")
+    if dti is None:
+        dti_valor, dti_color = "Pendiente", "gray"
+        dti_estado = "Faltan datos para medir el endeudamiento."
+        if cifras.get("ingresos_admisibles") == 0:
+            dti_valor = "No calculable"
+            dti_estado = "El ingreso admisible es S/ 0."
+    elif dti <= umbral:
+        dti_valor, dti_color = porcentaje(dti), "green"
+        dti_estado = f"Dentro del umbral de {umbral:.2%}."
+    else:
+        dti_valor, dti_color = porcentaje(dti), "red"
+        dti_estado = f"Supera el umbral de {umbral:.2%}."
+
+    lecturas = (
+        ("Saldo después del pago", dinero(saldo), estado_saldo_texto, color_saldo),
+        ("Endeudamiento total (DTI)", dti_valor, dti_estado, dti_color),
+    )
+    elementos = [
+        f'<div class="tt-alt-reading tt-alt-reading--{color}"><dt>{escape(rotulo)}</dt>'
+        f'<dd><strong>{escape(valor)}</strong><small>{escape(estado)}</small></dd></div>'
+        for rotulo, valor, estado, color in lecturas
+    ]
+    st.markdown('<dl class="tt-alt-readings">' + "".join(elementos) + "</dl>", unsafe_allow_html=True)
+
+
+def tarjeta(c, evaluacion, base, umbral):
     alternativa = evaluacion.alternativa
-    cifras = evaluacion.escenarios[1].resultado.cifras
+    escenario = evaluacion.escenarios[1]
+    cifras = escenario.resultado.cifras
     beneficio, desventaja = efectos_principales(evaluacion, base)
-    with st.container(border=True, gap="small", key=f"tt_alt_card_comparador_{alternativa.codigo}"):
+    with st.container(border=True, gap="xsmall", key=f"tt_alt_card_comparador_{alternativa.codigo}"):
         st.markdown(f"**{titulo_alternativa(c, alternativa)}**")
         st.caption(condiciones(alternativa))
-        st.markdown(f"Cuota mensual **{dinero(cifras.get('cuota_base'))}**")
-        pago = cifras.get("pago_mensual_total")
-        if pago is not None and pago != cifras.get("cuota_base"):
-            st.caption(f"Pago con cargos {dinero(pago)}")
-        st.caption(f"Escenario esperado · DTI {porcentaje(cifras.get('dti_total'))} · Saldo {dinero(cifras.get('saldo_post_cuota'))}")
-        st.markdown(f"Puntuación académica **{puntuacion(evaluacion.puntaje_global)}**")
-        if evaluacion.preliminar and evaluacion.puntaje_global is not None:
-            st.caption("Evaluación preliminar")
+        pago = cifras.get("pago_mensual_total", cifras.get("cuota_base"))
+        etiqueta_pago = "Pago mensual con cargos" if cifras.get("cargos_mensuales") else "Pago mensual"
+        st.markdown(f"{etiqueta_pago} **{dinero(pago)}**")
+        st.caption(f"Escenario esperado · caída de ingreso de {escenario.caida:g}%")
+        lecturas_financieras(cifras, umbral)
+        if evaluacion.puntaje_global is None:
+            st.markdown("**Puntuación académica pendiente**")
+        else:
+            etiqueta = "Puntuación preliminar" if evaluacion.preliminar else "Puntuación académica"
+            st.markdown(f"{etiqueta} **{puntuacion(evaluacion.puntaje_global)}**")
+        if evaluacion.resisten is None:
+            st.caption("Faltan datos para comprobar el saldo y el DTI de todos los escenarios.")
+        else:
+            st.caption(f"Cumple los criterios de saldo y DTI en **{evaluacion.resisten} de {len(evaluacion.escenarios)} escenarios**.")
         st.caption(beneficio)
         st.caption(desventaja)
         st.button(f"Analizar alternativa {alternativa.codigo}",
@@ -104,7 +149,7 @@ def tarjeta(c, evaluacion, base):
                   on_click=analizar_alternativa, args=(c, alternativa.codigo))
 
 
-def detalle_resultado(c, evaluacion, base):
+def detalle_resultado(c, evaluacion, base, umbral):
     alternativa = evaluacion.alternativa
     st.markdown(f"### {titulo_alternativa(c, alternativa)}")
     st.caption(f"{condiciones(alternativa)} · Puntuación académica {puntuacion(evaluacion.puntaje_global)}")
@@ -125,7 +170,7 @@ def detalle_resultado(c, evaluacion, base):
     st.markdown("**Tres escenarios de ingreso**")
     for columna, escenario in zip(st.columns(3, gap="small"), evaluacion.escenarios):
         with columna:
-            tarjeta_escenario(escenario)
+            tarjeta_escenario(escenario, umbral)
     if evaluacion.desfavorable and evaluacion.desfavorable is not evaluacion.escenarios[1]:
         st.caption(interpretar_saldo(evaluacion.desfavorable.resultado))
     with st.expander("Comparación con la solicitud original y puntuación por criterio"):
@@ -255,25 +300,26 @@ def metodologia(comparativa):
 
 
 def tarjetas_alternativas(c, comparativa):
-    st.info(comparativa.recomendacion)
+    if not comparativa.recomendadas:
+        if all(any(s.resiste is False for s in e.escenarios) for e in comparativa.alternativas):
+            st.warning("Ninguna alternativa cumple los criterios de saldo y endeudamiento en los tres escenarios.")
+        elif any(e.puntaje_global is None for e in comparativa.alternativas):
+            st.info("El resultado comparativo está pendiente. Revisa los datos y las alertas de cada alternativa.")
+        else:
+            st.warning("Hay alertas relevantes que deben revisarse antes de considerar una recomendación.")
     for columna, evaluacion in zip(st.columns(3, gap="small"), comparativa.alternativas):
         with columna:
-            tarjeta(c, evaluacion, comparativa.base)
+            tarjeta(c, evaluacion, comparativa.base, comparativa.umbral_dti)
 
 
-def tarjeta_escenario(escenario):
+def tarjeta_escenario(escenario, umbral):
     cifras = escenario.resultado.cifras
-    saldo = cifras.get("saldo_post_cuota")
-    estado, color = estado_saldo(saldo)
     nombre = escenario.nombre.lower()
     with st.container(border=True, gap="small", key=f"tt_escenario_{nombre}"):
-        st.markdown(f"**{escenario.nombre}** · caída de {escenario.caida:.0f}%")
-        st.caption(f"Ingreso {dinero(cifras.get('ingresos_admisibles'))} · DTI {porcentaje(cifras.get('dti_total'))}")
-        saldo_texto = "Saldo pendiente" if saldo is None else f"{estado}: {dinero(saldo)}"
-        st.markdown(f":{color}[**{saldo_texto}**]")
+        st.markdown(f"**{escenario.nombre}** · caída de {escenario.caida:g}%")
+        st.caption(f"Ingreso {dinero(cifras.get('ingresos_admisibles'))}")
+        lecturas_financieras(cifras, umbral)
         st.caption(puntuacion(escenario.puntaje))
-        if saldo is not None and saldo < 0:
-            st.caption("El ingreso no cubre todos los gastos y pagos.")
 
 
 def volver_al_listado(c):
@@ -309,7 +355,7 @@ def mostrar_alternativas(c):
         st.button("Volver a alternativas", icon=":material/arrow_back:", on_click=volver_al_listado, args=(c,))
     if evaluacion is not None:
         with st.container(key=f"tt_alternativa_detalle_{evaluacion.alternativa.codigo}"):
-            detalle_resultado(c, evaluacion, comparativa.base)
+            detalle_resultado(c, evaluacion, comparativa.base, comparativa.umbral_dti)
             eleccion(c, evaluacion)
             formulario_edicion(c, evaluacion.alternativa)
         return

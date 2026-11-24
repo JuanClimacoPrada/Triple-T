@@ -31,6 +31,8 @@ class TripleTViewModel:
     status_text: str = "Por comenzar"
     preliminary: bool = True
     current_step: int = 1
+    request_cards: list[MetricCard] = field(default_factory=list)
+    simulated: bool = False
     metrics: list = field(default_factory=list)
     indicators: list = field(default_factory=list)
     chart_bars: list = field(default_factory=list)
@@ -72,13 +74,27 @@ def url_segura(url):
 
 
 def dinero(valor):
-    return "Pendiente" if valor is None else f"S/ {valor:,.2f}"
+    if valor is None:
+        return "Pendiente"
+    return f"{'−' if valor < 0 else ''}S/ {abs(valor):,.2f}"
+
+
+def tarjetas_solicitud(exp):
+    plazo = "Sin registrar" if exp.meses is None else f"{exp.meses} {'mes' if exp.meses == 1 else 'meses'}"
+    tea = "Sin registrar" if exp.tea is None else f"{exp.tea:.2f}%"
+    return [
+        MetricCard("Ingreso mensual declarado", "Sin registrar" if exp.ingreso is None else dinero(exp.ingreso), icon="wallet"),
+        MetricCard("Monto solicitado", "Sin registrar" if exp.monto is None else dinero(exp.monto), icon="file"),
+        MetricCard("TEA registrada", tea, icon="chart"),
+        MetricCard("Plazo solicitado", plazo, icon="layers"),
+    ]
 
 
 def construir_vm(c, sentinel_url=None):
     confirmado = bool(c.flujo and c.flujo.revision_confirmada == c.revision and c.resultado is not None and not c.pendiente)
     exp, r = actual(c) if confirmado else (c.expediente, resultado_para(c, c.expediente))
-    vm = TripleTViewModel(preliminary=not confirmado, sentinel_url=url_segura(sentinel_url))
+    vm = TripleTViewModel(preliminary=not confirmado, sentinel_url=url_segura(sentinel_url),
+                          request_cards=tarjetas_solicitud(c.expediente), simulated=bool(confirmado and c.escenario))
     etapas = {"INICIO":1, "CONDICIONES":1, "FINANZAS":1, "HISTORIAL":1, "EVIDENCIA_INGRESOS":2,
               "EVIDENCIA_PATRIMONIO":2, "REVISION_DATOS":3, "RESULTADOS":4}
     vm.current_step = 5 if confirmado and c.escenario else etapas.get(c.flujo.etapa if c.flujo else "INICIO", 1)
@@ -86,6 +102,8 @@ def construir_vm(c, sentinel_url=None):
     cifra = r.cifras
     pago = cifra.get("pago_mensual_total", cifra.get("cuota_base"))
     dti = cifra.get("dti_total")
+    ingreso = cifra.get("ingresos_admisibles")
+    dti_sin_ingreso = confirmado and dti is None and ingreso == 0
     detalle_pago = "Con los cargos mensuales registrados" if "pago_mensual_total" in cifra else "Capital e interés"
     if pago is None:
         detalle_pago = "Requiere monto, plazo y TEA válidos"
@@ -95,20 +113,24 @@ def construir_vm(c, sentinel_url=None):
     if confirmado and dti is not None:
         excede = dti > c.config.umbral_dti
         color_dti = "red" if excede else "green"
-        estado_dti = ("Supera el umbral de " if excede else "Dentro del umbral de ") + f"{c.config.umbral_dti:.0%}"
+        estado_dti = (f"Sobreendeudamiento según el umbral académico de {c.config.umbral_dti:.0%}"
+                      if excede else f"Dentro del umbral académico de {c.config.umbral_dti:.0%}")
+    elif dti_sin_ingreso:
+        color_dti = "red"
+        estado_dti = "El ingreso admisible es S/ 0"
     color_saldo = "blue"
     estado_saldo = "Después de gastos y cuotas"
     if confirmado and saldo is not None:
         color_saldo = "red" if saldo < 0 else "green" if saldo > 0 else "amber"
         estado_saldo = "Déficit mensual" if saldo < 0 else "Margen mensual positivo" if saldo > 0 else "Sin margen mensual"
     capacidad = cifra.get("capacidad_neta")
+    dti_texto = "No calculable" if dti_sin_ingreso else "Pendiente" if dti is None else f"{dti:.1%}"
     vm.metrics = [
         MetricCard("Cuota mensual estimada", dinero(pago), detalle_pago, "blue", "wallet"),
         MetricCard("Capacidad mensual", dinero(capacidad), "Disponible antes del nuevo pago", "cyan", "wallet"),
-        MetricCard("Endeudamiento (DTI)", "Pendiente" if dti is None else f"{dti:.1%}", estado_dti, color_dti, "chart"),
+        MetricCard("Endeudamiento (DTI)", dti_texto, estado_dti, color_dti, "chart"),
         MetricCard("Saldo después del pago", dinero(saldo), estado_saldo, color_saldo, "layers"),
     ]
-    ingreso = cifra.get("ingresos_admisibles")
     pago_total = cifra.get("pago_mensual_total")
     uso = pago_total / capacidad if pago_total is not None and capacidad is not None and capacidad > 0 else None
     margen_dti = (c.config.umbral_dti - dti) * 100 if dti is not None else None
@@ -120,12 +142,20 @@ def construir_vm(c, sentinel_url=None):
         texto_uso = f"{uso:.1%}"
         subtitulo_uso = "Supera la capacidad neta" if uso > 1 else "Consume toda la capacidad neta" if uso == 1 else "Parte de la capacidad neta que consume el pago"
         color_uso = "red" if uso > 1 else "amber" if uso == 1 else "green"
-    vm.indicators = [
-        MetricCard("Capacidad utilizada", texto_uso, subtitulo_uso, color_uso, "wallet"),
-        MetricCard("Margen frente al umbral DTI", "Pendiente" if margen_dti is None else f"{abs(margen_dti):.1f} pp",
-                   "Compara DTI total con el umbral académico" if margen_dti is None else "Por encima del umbral" if margen_dti < 0 else "En el umbral" if margen_dti == 0 else "Por debajo del umbral",
-                   "blue" if margen_dti is None else "red" if margen_dti < 0 else "amber" if margen_dti == 0 else "green", "chart"),
-    ]
+    if margen_dti is None:
+        texto_margen = "No calculable" if dti_sin_ingreso else "Pendiente"
+        estado_margen = "El ingreso admisible es S/ 0" if dti_sin_ingreso else "Requiere un DTI calculable"
+        color_margen = "red" if dti_sin_ingreso else "blue"
+    elif margen_dti == 0:
+        texto_margen, estado_margen, color_margen = "0.0 pp", "En el umbral", "amber"
+    else:
+        negativo = margen_dti < 0
+        signo = "−" if negativo else "+"
+        texto_margen = f"{signo}{abs(margen_dti):.1f} pp"
+        estado_margen = "Por encima del umbral" if negativo else "Por debajo del umbral"
+        color_margen = "red" if negativo else "green"
+    vm.indicators = [MetricCard("Capacidad utilizada", texto_uso, subtitulo_uso, color_uso, "wallet"),
+                     MetricCard("Margen frente al umbral DTI", texto_margen, estado_margen, color_margen, "chart")]
     vm.state_label = estado_revision(c, r)
     if "cuota_base" in cifra:
         # Comparación teórica a la misma tasa: no crea ofertas ni altera el expediente.
@@ -179,8 +209,22 @@ def steps_html(vm):
     return '<ol class="tt-steps" aria-label="Etapas de evaluación">'+''.join(f'<li class="{"current" if i == vm.current_step else "done" if i < vm.current_step else "pending"}"'+(' aria-current="step"' if i==vm.current_step else '')+f'><span>{"✓" if i < vm.current_step else i}</span>{escape(p)}</li>' for i,p in enumerate(pasos,1))+'</ol>'
 
 
-def cards_html(cards):
-    return '<div class="tt-metrics">'+''.join(f'<article class="tt-card {c.accent if c.accent in ("green","blue","cyan","red","amber") else "blue"}"><div class="tt-card-label">{icon(c.icon)}<span>{escape(c.label)}</span></div><strong>{escape(c.value).replace("S/ ", "S/&nbsp;")}</strong><small>{escape(c.subtitle)}</small></article>' for c in cards)+'</div>'
+def cards_html(cards, *, compactas=False):
+    clases = "tt-metrics tt-metrics-compact" if compactas else "tt-metrics"
+    partes = []
+    for tarjeta in cards:
+        color = tarjeta.accent if tarjeta.accent in ("green", "blue", "cyan", "red", "amber") else "blue"
+        valor = escape(tarjeta.value).replace("S/ ", "S/&nbsp;")
+        subtitulo = f"<small>{escape(tarjeta.subtitle)}</small>" if tarjeta.subtitle else ""
+        partes.append(f'<article class="tt-card {color}"><div class="tt-card-label">{icon(tarjeta.icon)}'
+                      f'<span>{escape(tarjeta.label)}</span></div><strong>{valor}</strong>{subtitulo}</article>')
+    return f'<div class="{clases}">{"".join(partes)}</div>'
+
+
+def sugerencia_html(texto):
+    return ('<aside class="tt-suggestion" aria-label="Sugerencia de Triple-T">'
+            f'<span class="tt-suggestion-icon">{icon("bot")}</span>'
+            f'<div><strong>Sugerencia de Triple-T</strong><p>{escape(texto)}</p></div></aside>')
 
 
 def bars_html(data):
@@ -234,7 +278,9 @@ def render_dashboard_area(vm, seccion="Resumen"):
         section_title("Uso del ingreso", "wallet")
         st.markdown(donut_html(vm), unsafe_allow_html=True)
         return
-    section_title("Resumen del caso", "file")
+    section_title("Datos de la solicitud original" if vm.simulated else "Datos de la solicitud", "file")
+    st.markdown(cards_html(vm.request_cards, compactas=True), unsafe_allow_html=True)
+    section_title("Resultado de la simulación" if vm.simulated else "Resultado mensual", "chart")
     if vm.preliminary:
         st.caption("Los indicadores se completan a medida que registras los datos.")
     st.markdown(cards_html(vm.metrics), unsafe_allow_html=True)

@@ -152,6 +152,11 @@ class TestApp(unittest.TestCase):
         self.assertIsNone(c.informe)
         self.boton(app, "Confirmar y calcular")
         self.assertIsNone(c.resultado.cifras["dti_total"])
+        resumen_tab = next(tab for tab in app.tabs if tab.label == "Resumen")
+        indicadores = next(tab for tab in app.tabs if tab.label == "Indicadores")
+        self.assertTrue(any("Déficit mensual" in m.value and "−S/" in m.value for m in resumen_tab.markdown))
+        self.assertTrue(any("No calculable" in m.value and "ingreso admisible es S/ 0" in m.value for m in indicadores.markdown))
+        self.assertTrue(any("Causa, con el ingreso admisible en cero, yo esperaría" in m.value for m in resumen_tab.markdown))
 
     def test_navegacion_operativa_y_diagnostico_costos(self):
         app = self.iniciar()
@@ -161,6 +166,11 @@ class TestApp(unittest.TestCase):
         self.confirmar_caso(app)
         resumen_tab = next(tab for tab in app.tabs if tab.label == "Resumen")
         indicadores = next(tab for tab in app.tabs if tab.label == "Indicadores")
+        datos = next(m.value for m in resumen_tab.markdown if "tt-metrics-compact" in m.value)
+        for valor in ("3,500.00", "10,000.00", "25.00%", "12 meses"):
+            self.assertIn(valor, datos)
+        self.assertTrue(any("Sobreendeudamiento según el umbral académico" in m.value for m in resumen_tab.markdown))
+        self.assertTrue(any("Sugerencia de Triple-T" in m.value and "Causa" in m.value for m in resumen_tab.markdown))
         self.assertFalse(any("Capacidad utilizada" in m.value for m in resumen_tab.markdown))
         self.assertTrue(any("Capacidad utilizada" in m.value for m in indicadores.markdown))
         self.assertTrue(any("Alertas financieras y documentales" in m.value for m in indicadores.markdown))
