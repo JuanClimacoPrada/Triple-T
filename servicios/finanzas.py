@@ -64,15 +64,48 @@ def fechas_mensuales(inicio: date, meses: int):
     return tuple(fechas)
 
 
+def problemas_flujo_fechado(neto, pagos, fechas, desembolso, plazo=None):
+    """Chequeos independientes. None en pagos indica cronograma aún no calculado."""
+    causas = []
+    if type(desembolso) is not date:
+        causas.append("Registra una fecha de desembolso válida.")
+    if not fechas:
+        causas.append("Completa y confirma las fechas de vencimiento.")
+    else:
+        if plazo is not None and len(fechas) != plazo:
+            causas.append(f"Hay {len(fechas)} vencimientos para un plazo de {plazo} pagos. Completa el calendario.")
+        if any(type(fecha) is not date for fecha in fechas):
+            causas.append("Corrige las fechas de vencimiento no válidas.")
+        elif (type(desembolso) is date and fechas[0] <= desembolso) or any(
+            b <= a for a, b in zip(fechas, fechas[1:])
+        ):
+            causas.append("Ordena los vencimientos, sin duplicados y después del desembolso.")
+    if neto is not None:
+        try:
+            importe = numero(neto, "Desembolso neto")
+            if importe == 0:
+                raise ValueError
+        except ValueError:
+            causas.append("Los cargos iniciales del solicitante deben dejar un desembolso neto positivo y válido.")
+    if pagos is not None:
+        if not pagos or (plazo is not None and len(pagos) != plazo):
+            causas.append("El cronograma debe contener un flujo por cada pago del plazo.")
+        try:
+            if any(numero(pago, "Pago") == 0 for pago in pagos):
+                raise ValueError
+        except ValueError:
+            causas.append("Cada flujo de pago debe tener un importe positivo y válido.")
+    return tuple(causas)
+
+
 def tcea_fechada(neto, pagos, fechas, desembolso):
     """IRR anual ACT/365; una entrada positiva seguida solo de salidas positivas."""
-    neto = numero(neto, "Desembolso neto", CENTIMO)
-    if not isinstance(desembolso, date) or len(pagos) != len(fechas) or not pagos:
-        raise ValueError("TCEA pendiente: faltan fechas o flujos.")
-    if any(not isinstance(f, date) for f in fechas) or any(b <= a for a, b in zip((desembolso,) + tuple(fechas), fechas)):
-        raise ValueError("TCEA pendiente: fechas no crecientes.")
+    neto = numero(neto, "Desembolso neto")
+    causas = problemas_flujo_fechado(neto, pagos, fechas, desembolso, len(pagos))
+    if causas:
+        raise ValueError(" ".join(causas))
     import math
-    valores = [float(numero(p, "Pago", CENTIMO)) for p in pagos]
+    valores = [float(numero(p, "Pago")) for p in pagos]
     tiempos = [(f - desembolso).days / 365 for f in fechas]
     # Resolver log(1+r) evita desbordamiento con tasas altas y raíz negativa.
     def vpn(log_tasa):

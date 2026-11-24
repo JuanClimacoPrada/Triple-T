@@ -4,7 +4,7 @@ from decimal import Decimal as D
 import streamlit as st
 from visualizaciones import filas_visibles, mostrar_graficos
 
-def mostrar_resultado(resultado, base=None):
+def mostrar_resultado(resultado, base=None, *, mostrar_alertas=True):
     st.subheader(resultado.estado)
     st.caption("Recomendación para revisión del analista. No implica decisión crediticia.")
     if resultado.cifras:
@@ -15,8 +15,9 @@ def mostrar_resultado(resultado, base=None):
         dti = resultado.cifras.get("dti_total")
         st.metric("DTI total", "N/D" if dti is None else f"{dti:.2%}")
         st.dataframe([{"Indicador calculado": k, "Valor": "N/D" if v is None else f"{v:.2f}" if isinstance(v, D) else str(v)} for k, v in resultado.cifras.items()], hide_index=True)
-    for regla in resultado.reglas:
-        st.warning(f"{regla['regla']} · {regla['campo']}: {regla['mensaje']}")
+    if mostrar_alertas:
+        for regla in resultado.reglas:
+            st.warning(regla["mensaje"])
     st.write(f"TCEA referencial: {resultado.tcea:.2%}" if resultado.tcea is not None else "TCEA no calculable con los datos disponibles.")
     if resultado.meses_ingreso:
         st.dataframe(filas_visibles(resultado.meses_ingreso), hide_index=True)

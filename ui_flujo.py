@@ -1,6 +1,7 @@
 """Interfaz del Sprint 5; el estado y las transiciones viven en experiencia/."""
 from dataclasses import replace
 from decimal import Decimal as D
+import os
 import streamlit as st
 from dominio.modelos import Configuracion, VERSION_REGLAS
 from conversacion.gestor import decir, recibir, confirmar_accion, invalidar, crear_escenario, actual, generar_informe, aclarar_ingreso
@@ -8,21 +9,24 @@ from experiencia.flujo import siguiente, iniciar, diferir, confirmar_revision, f
 from experiencia.preguntas import TITULOS, ETIQUETAS, legible
 from experiencia.ambientes import entorno, ia_permitida, AVISO_DEMO
 from experiencia.evidencia import pendientes_documentales
-from experiencia.tarjetas import comparacion
-from experiencia.ayuda_ia import disponible, responder, ALERTAS
+from experiencia.tarjetas import comparacion, avisos_evaluacion
+from experiencia.ayuda_ia import responder, estado_asistente
 from ia.politicas import EstadoIA, ERRORES
-from ia.proveedor import configuracion
+from ia.proveedor import configuracion, diagnostico_sdk
 from ui_documentos import mostrar_documentos
 from ui_resultados import mostrar_resultado
 from ui_estrategia import mostrar_estrategia
 from casos import CASOS
 from ui_riesgo import mostrar_riesgo
-from ui_alternativas import mostrar_alternativas
+from ui_alternativas import mostrar_alternativas, mostrar_resumen_alternativas, mostrar_seleccion, mostrar_puntuaciones
+from ui_chat import editor_costos, editor_anotaciones
+from servicios.costos import diagnostico_tcea
+from servicios.alternativas import interpretar_saldo
 from triple_t_pro_layout import (construir_vm, sentinel_config, load_styles, hero_html,
-    message_html, steps_html, section_title, render_dashboard_area)
+    message_html, steps_html, section_title, render_dashboard_area, sentinel_link_html)
 
 TAB_POR_VISTA = {"ALTERNATIVAS": "Alternativas", "SIMULAR": "Simular", "DETALLE": "Detalle",
-                 "GRAFICO": "Gráficos", "PDF": "Informe e IA"}
+                 "GRAFICO": "Gráficos", "PDF": "Informe", "COSTOS": "Detalle"}
 
 
 def abrir_pestana(c):
@@ -54,6 +58,7 @@ def accion(nombre):
     elif nombre == "SIMULACION":
         iniciar(c, True)
     elif nombre == "CONTINUAR":
+        st.session_state.navegacion = "ANALISIS"
         f.iniciado = True
         f.revision_confirmada = f.ia_revision = None
         f.diferidos.clear()
@@ -65,6 +70,7 @@ def accion(nombre):
     elif nombre in ("NO_SE", "DESPUES", "SOLICITAR"):
         diferir(c, "SOLICITAR" if nombre == "SOLICITAR" else "PENDIENTE")
     elif nombre in ("BOLETAS", "OTRO_INGRESO", "PATRIMONIO"):
+        st.session_state.navegacion = "ANALISIS"
         c.vista = {"BOLETAS": "EVIDENCIAS", "OTRO_INGRESO": "OTRO_INGRESO", "PATRIMONIO": "PATRIMONIO"}[nombre]
         f.ia_revision = None
     elif nombre == "FIN_DOCUMENTOS":
@@ -82,12 +88,17 @@ def accion(nombre):
             c.vista = "PATRIMONIO"
         else:
             decir(c, siguiente(c))
-    elif nombre == "SIN_IA":
-        st.session_state.ia.habilitado = st.session_state.ia.consentimiento = False
-        st.session_state["consentimiento_gemini"] = False
-    elif nombre == "ALTERNATIVAS":
-        c.vista = "ALTERNATIVAS"
+    elif nombre in ("ALTERNATIVAS", "COSTOS", "DETALLE"):
+        st.session_state.navegacion = "ANALISIS"
+        c.vista = nombre
         abrir_pestana(c)
+    elif nombre == "EXPEDIENTE":
+        navegar("EXPEDIENTE")
+    elif nombre == "INDICADORES":
+        st.session_state.pestana_analisis = "Indicadores"
+    elif nombre == "ACLARAR_INGRESO":
+        st.session_state.navegacion = "ANALISIS"
+        st.session_state.mostrar_aclaracion = True
     elif nombre == "PDF":
         try:
             generar_informe(c)
@@ -114,68 +125,50 @@ def resumen(c, incluir_pendientes=True):
 
 def navegar(pagina):
     st.session_state.navegacion = pagina
-    c = st.session_state.conversacion
-    if pagina == "SIMULADOR":
-        if disponible(c):
-            c.vista = "SIMULAR"
-            abrir_pestana(c)
-        else:
-            iniciar(c, True)
-    elif pagina == "ANALISIS":
-        c.vista = "RESUMEN"
-    elif pagina == "EXPEDIENTE":
-        c.vista = "RESUMEN"
 
 
-def barra_lateral(c, editor, pedir_caso):
+def barra_lateral(c):
     with st.sidebar:
         st.markdown('<div class="tt-side-brand">Triple<span>-T</span></div>', unsafe_allow_html=True)
-        for label, page, icono in (("Análisis crediticio", "ANALISIS", "analytics"), ("Simulador", "SIMULADOR", "calculate"),
-                                  ("Expediente", "EXPEDIENTE", "folder_open"), ("Historial", "HISTORIAL", "history"), ("Ayuda", "AYUDA", "help_outline")):
-            st.button(label, key="nav_"+page, icon=f":material/{icono}:", use_container_width=True,
-                      type="primary" if st.session_state.get("navegacion", "ANALISIS") == page else "secondary",
-                      on_click=navegar, args=(page,))
+        destinos = [("Análisis crediticio", "ANALISIS", "analytics"), ("Expediente", "EXPEDIENTE", "folder_open"),
+                    ("Historial de cambios", "HISTORIAL", "history"), ("Configuración", "CONFIGURACION", "settings")]
+        if os.environ.get("TRIPLE_T_HERRAMIENTAS_DEV", "").lower() == "true":
+            destinos.append(("Desarrollo", "DESARROLLO", "science"))
+        for etiqueta, pagina, icono in destinos:
+            st.button(etiqueta, key="nav_" + pagina, icon=f":material/{icono}:", width="stretch",
+                      type="primary" if st.session_state.get("navegacion", "ANALISIS") == pagina else "secondary",
+                      on_click=navegar, args=(pagina,))
         st.markdown('<div class="tt-side-label">Mi evaluación</div>', unsafe_allow_html=True)
         st.caption(TITULOS[c.flujo.etapa])
-        boton("Continuar paso pendiente", "CONTINUAR", key="continuar_sidebar")
-        st.button("Nueva evaluación", on_click=enviar, args=("reiniciar",))
-        with st.expander("Resumen del expediente"):
-            filas = resumen(c, False)
-            if filas:
-                st.dataframe(filas, hide_index=True, use_container_width=True)
-            else:
-                st.caption("Todavía no hay datos registrados.")
-        with st.expander("Documentos y evidencia"):
-            st.caption(f"{len(c.documentos)} archivos presentados · {sum(e.estado == 'CONFIRMADO' for e in c.expediente.evidencias)} boletas con transcripción confirmada")
-            boton("Revisar boletas", "BOLETAS", key="boletas_sidebar")
-            boton("Otro respaldo", "OTRO_INGRESO", key="otro_sidebar")
-            if c.flujo.propiedad == "SI":
-                boton("Patrimonio declarado", "PATRIMONIO", key="patrimonio_sidebar")
-        with st.expander("Simulaciones"):
-            if disponible(c):
-                st.button("Comparar condiciones", on_click=enviar, args=("simular",))
-            else:
-                boton("Simular un préstamo", "SIMULACION", key="sim_sidebar")
-        with st.expander("Historial de cambios de la sesión"):
-            if c.flujo.cambios:
-                st.dataframe(c.flujo.cambios, hide_index=True)
-            else:
-                st.caption("Sin cambios todavía. Las correcciones requieren confirmación y pueden cancelarse.")
-        # Popover permite alojar los expanders del editor sin expanders anidados.
-        with st.popover("Herramientas avanzadas"):
-            editor(c)
-            with st.form("configuracion_guiada"):
-                umbral = st.number_input("Umbral DTI de demostración (%)", 0., 100., float(c.config.umbral_dti * 100))
-                dif = st.number_input("Tolerancia de discrepancia documental (%)", 0., 100., float(c.config.discrepancia * 100))
-                tope = st.number_input("Tope técnico TEA (%)", 0., 10000., float(c.config.tea_maxima))
-                if st.form_submit_button("Aplicar parámetros"):
-                    c.config = Configuracion(D(str(umbral))/100, D(str(dif))/100, D(str(tope)))
-                    invalidar(c)
-                    st.rerun()
-            st.caption("Escenarios de PD y pérdida esperada ilustrativa: Indicadores → Evaluación del riesgo crediticio. Requieren horizonte explícito.")
-            st.button("Comparación estratégica A/B/C", on_click=enviar, args=("compara A, B y C",))
-            for nombre in CASOS:
-                st.button("Cargar caso " + nombre.lower(), key="caso_" + nombre, on_click=pedir_caso, args=(nombre,))
+        st.button("Nueva evaluación", icon=":material/add:", on_click=enviar, args=("reiniciar",))
+
+
+def configuracion_academica(c):
+    section_title("Criterios académicos", "scale")
+    with st.form("configuracion_guiada"):
+        umbral = st.number_input("Umbral DTI de demostración (%)", 0., 100., float(c.config.umbral_dti * 100))
+        dif = st.number_input("Tolerancia de discrepancia documental (%)", 0., 100., float(c.config.discrepancia * 100))
+        tope = st.number_input("Tope técnico TEA (%)", 0., 10000., float(c.config.tea_maxima))
+        if st.form_submit_button("Guardar criterios"):
+            nueva = Configuracion(D(str(umbral))/100, D(str(dif))/100, D(str(tope)))
+            if nueva != c.config:
+                c.config = nueva
+                invalidar(c)
+                st.rerun()
+            st.caption("Los criterios ya están guardados.")
+
+
+def herramientas_dev(c, vm, pedir_caso):
+    section_title("Herramientas de desarrollo")
+    st.caption("Material sintético para verificar el prototipo.")
+    casos, riesgo, estrategia = st.tabs(["Casos sintéticos", "Probabilidad ilustrativa", "Comparación tecnológica"])
+    with casos, st.container(horizontal=True):
+        for nombre in CASOS:
+            st.button("Cargar caso " + nombre.lower(), key="caso_" + nombre, on_click=pedir_caso, args=(nombre,))
+    with riesgo:
+        mostrar_riesgo(c, vm, detalle=True)
+    with estrategia:
+        mostrar_estrategia()
 
 
 def opciones(c):
@@ -248,30 +241,71 @@ def simulador(c):
                 st.warning(str(error))
 
 
+def cambiar_consentimiento():
+    ia = st.session_state.ia
+    permitido = ia_permitida(st.secrets)
+    ia.consentimiento = bool(st.session_state.consentimiento_gemini and permitido)
+    ia.habilitado = ia.consentimiento
+
+
 def panel_ia():
     ia = st.session_state.ia
     cfg = configuracion(st.secrets)
     permitido = ia_permitida(st.secrets)
-    with st.expander("Gemini opcional", expanded=False):
-        st.caption("Al activarlo, Google recibe la pregunta de demostración tras un filtro de privacidad y el contexto mínimo del caso. El nivel gratuito puede usar los datos para mejorar productos. Usa solo datos ficticios. Los documentos, sus transcripciones y las notas del expediente quedan en Triple-T.")
-        consentimiento = st.checkbox("Consiento el envío de consultas de demostración", key="consentimiento_gemini")
-        if not permitido:
-            st.info("La consulta remota está deshabilitada por el responsable. Puedes seguir sin IA.")
-        elif cfg.pendientes:
-            st.caption("Consulta local disponible. Configuración pendiente: " + ", ".join(cfg.pendientes))
-        elif ia.ultimo_error:
-            st.caption(ERRORES.get(ia.ultimo_error, ERRORES["CONEXION"]) + " Se utiliza una explicación local.")
-        else:
-            st.caption("Gemini ya respondió en esta sesión." if ia.respuestas_validas else "Configurado; aún sin respuesta remota en esta sesión.")
-        if not consentimiento:
-            ia.habilitado = ia.consentimiento = False
-        if st.button("Activar Gemini", disabled=not consentimiento or not permitido or not cfg.disponible or ia.llamadas >= 20 or ia.habilitado):
-            ia.consentimiento = ia.habilitado = True
+    section_title("Asistente conversacional", "bot")
+    st.caption("Con tu consentimiento, Google recibe consultas ficticias filtradas y los indicadores necesarios. El nivel gratuito puede usar el contenido para mejorar sus productos. Los documentos, transcripciones y notas se procesan dentro de Triple-T.")
+    st.checkbox("Consiento el envío de consultas de demostración", key="consentimiento_gemini",
+                value=ia.consentimiento, disabled=not permitido, on_change=cambiar_consentimiento)
+    st.caption(estado_asistente(ia, cfg, permitido=permitido))
+    if permitido and cfg.pendientes:
+        st.caption("Configuración del servidor pendiente: " + ", ".join(cfg.pendientes))
+    elif permitido and (problema_sdk := diagnostico_sdk()) and problema_sdk != ia.ultimo_error:
+        st.info(ERRORES[problema_sdk])
+    if ia.ultimo_error:
+        st.info(ERRORES.get(ia.ultimo_error, ERRORES["CONEXION"]))
+    if ia.circuito_abierto and ia.consentimiento and permitido and cfg.disponible and ia.llamadas < 20:
+        if st.button("Volver a habilitar la conexión"):
             ia.circuito_abierto = False
+            ia.habilitado = True
             ia.ultimo_error = ""
             st.rerun()
-        boton("Seguir sin IA", "SIN_IA")
-        st.caption(f"Consultas remotas: {ia.llamadas}/20. Sin reintentos automáticos.")
+    st.caption(f"Consultas externas en esta sesión: {ia.llamadas}/20.")
+
+
+ACCIONES_AVISO = {
+    "CONTINUAR": "Completar datos del análisis", "ACLARAR_INGRESO": "Aclarar fuente de ingresos",
+    "BOLETAS": "Revisar boletas", "ALTERNATIVAS": "Comparar alternativas", "EXPEDIENTE": "Revisar expediente",
+    "OTRO_INGRESO": "Revisar otros respaldos", "PATRIMONIO": "Revisar patrimonio",
+}
+
+
+def mostrar_avisos(c, r, *, resumen=False):
+    avisos = avisos_evaluacion(c, r)
+    if not avisos:
+        return
+    section_title("Qué conviene revisar" if resumen else "Alertas financieras y documentales", "file")
+    mostrados = avisos[:2] if resumen else avisos
+    acciones = set()
+    for indice, (titulo, descripcion, ruta) in enumerate(mostrados):
+        with st.container(border=True):
+            st.markdown(f"**{titulo}**")
+            st.text(descripcion)
+            if ruta and ruta not in acciones:
+                boton(ACCIONES_AVISO[ruta], ruta, key=f"aviso_{resumen}_{indice}")
+                acciones.add(ruta)
+    if resumen and len(avisos) > len(mostrados):
+        boton("Ver todas las alertas", "INDICADORES")
+
+
+def mostrar_tcea(exp, resultado):
+    pendientes = diagnostico_tcea(exp, resultado)
+    if resultado.tcea is not None and not pendientes:
+        return
+    with st.container(border=True, key="tt_tcea_notice"):
+        st.markdown("**TCEA pendiente**")
+        for pendiente in pendientes:
+            st.text(pendiente)
+        boton("Completar costos y fechas", "COSTOS", key="costos_tcea")
 
 
 def resultados(c, seccion):
@@ -279,41 +313,38 @@ def resultados(c, seccion):
     if r is None:
         return
     if seccion == "Resumen":
-        boton("Comparar alternativas del crédito", "ALTERNATIVAS")
-        pendientes = faltan(c)
-        if pendientes:
-            st.caption("Por completar: " + ", ".join(ETIQUETAS[k] for k in pendientes))
-            boton("Continuar con los datos pendientes", "CONTINUAR", key="continuar_resultados")
-        alertas = sorted(r.reglas, key=lambda a: {"discrepancia":0, "pendiente":1, "relevante":2}.get(a["nivel"], 3))
-        if alertas:
-            st.warning(ALERTAS.get(alertas[0]["regla"], "Revisa los datos y limitaciones antes de decidir."))
-            with st.expander("Otras alertas y detalles"):
-                for a in alertas[1:]:
-                    st.write(ALERTAS.get(a["regla"], a["mensaje"]))
-                for a in alertas:
-                    if a["regla"] in ("RN-07", "VAL-05/07", "RN-10", "RN-13"):
-                        st.caption(a["mensaje"])
-        for mensaje in pendientes_documentales(c):
-            st.caption(mensaje)
+        st.write(interpretar_saldo(r))
+        mostrar_avisos(c, r, resumen=True)
+        mostrar_resumen_alternativas(c)
+        mostrar_seleccion(c)
+    elif seccion == "Indicadores":
+        st.write(interpretar_saldo(r))
+        mostrar_tcea(exp, r)
+        mostrar_avisos(c, r)
+        mostrar_puntuaciones(c)
     elif seccion == "Detalle":
-        with st.expander("Ver detalle y evidencias", expanded=c.vista == "DETALLE"):
-            mostrar_resultado(r, base=c.resultado if c.escenario else None)
-            st.caption("Solo boletas confirmadas con meses únicos alimentan el promedio. Otros respaldos no acreditan ingreso estable.")
-            boton("Revisar documentos de ingresos", "BOLETAS", key="documentos_resultados")
-        with st.expander("Cómo se calculó"):
-            st.write("Cuotas mensuales vencidas, sistema francés: TEM = (1 + TEA/100)^(1/12) − 1. A tasa cero, cuota = monto / meses. DTI = servicio mensual de deuda / ingreso admisible.")
-            st.caption(f"Reglas: {VERSION_REGLAS} · Fecha: {exp.fecha} · Fuente de cifras: motor Python. Redondeo solo en presentación a dos decimales; saldo interno de alta precisión.")
-            for supuesto in r.supuestos:
-                st.caption(supuesto)
-            st.dataframe(resumen(c), hide_index=True)
+        if c.vista == "COSTOS":
+            boton("Volver al detalle del caso", "DETALLE")
+            editor_costos(c)
+        else:
+            section_title("Cronograma y supuestos")
+            boton("Completar costos y fechas", "COSTOS", key="costos_detalle")
+            mostrar_resultado(r, base=c.resultado if c.escenario else None, mostrar_alertas=False)
+            st.caption(f"Reglas {VERSION_REGLAS} · Fecha {exp.fecha} · Sistema francés con TEA fija. Las cifras se redondean para su presentación.")
+            with st.expander("Supuestos del cálculo"):
+                for supuesto in r.supuestos:
+                    st.caption(supuesto)
     elif seccion == "Simular":
         if "cuota_base" in r.cifras:
-            with st.expander("Comparar escenario", expanded=c.vista == "SIMULAR"):
-                simulador(c)
+            simulador(c)
             if c.escenario:
-                st.dataframe(comparacion(c.resultado, c.resultado_escenario), hide_index=True, use_container_width=True)
-    elif seccion == "Informe e IA":
-        boton("Preparar informe PDF", "PDF")
+                st.dataframe(comparacion(c.resultado, c.resultado_escenario), hide_index=True, width="stretch")
+        else:
+            st.info("Completa monto, plazo y TEA antes de crear escenarios financieros.")
+            boton("Completar condiciones", "CONTINUAR", key="completar_simular")
+    elif seccion == "Informe":
+        mostrar_seleccion(c, "informe")
+        boton("Preparar informe PDF", "PDF", type="primary")
         if c.informe is not None and c.informe_revision == c.revision and not c.pendiente:
             st.download_button("Descargar informe vigente", c.informe, "triple-t-informe.pdf", "application/pdf")
 
@@ -341,23 +372,45 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
     vm = construir_vm(c, sentinel_config(st.secrets))
     st.markdown(hero_html(vm), unsafe_allow_html=True)
     st.caption(AVISO_DEMO)
-    barra_lateral(c, editor, pedir_caso)
+    if c.pendiente:
+        st.session_state.navegacion = "ANALISIS"
+    barra_lateral(c)
+    pagina = st.session_state.get("navegacion", "ANALISIS")
+    if pagina == "EXPEDIENTE":
+        with st.container(border=True, key="tt_dossier"):
+            section_title("Expediente y evidencias")
+            st.dataframe(resumen(c), hide_index=True, width="stretch")
+            with st.container(horizontal=True):
+                boton("Revisar boletas", "BOLETAS", key="boletas_expediente")
+                boton("Otro respaldo", "OTRO_INGRESO", key="otros_expediente")
+                if c.flujo.propiedad == "SI":
+                    boton("Patrimonio", "PATRIMONIO", key="patrimonio_expediente")
+                boton("Completar costos y fechas", "COSTOS", key="costos_expediente")
+            editor(c)
+            editor_anotaciones(c)
+        return
+    if pagina == "HISTORIAL":
+        section_title("Historial de cambios de la sesión")
+        if c.flujo.cambios:
+            st.dataframe(c.flujo.cambios, hide_index=True, width="stretch")
+        else:
+            st.caption("Todavía no hay cambios registrados.")
+        return
+    if pagina == "CONFIGURACION":
+        with st.container(border=True, key="tt_settings"):
+            panel_ia()
+            st.divider()
+            configuracion_academica(c)
+        return
+    if pagina == "DESARROLLO" and os.environ.get("TRIPLE_T_HERRAMIENTAS_DEV", "").lower() == "true":
+        herramientas_dev(c, vm, pedir_caso)
+        return
     with st.container(key="tt_workspace"):
-        chat, dashboard = st.columns([1, 1.2], gap="medium")
+        chat, dashboard = st.columns([1, 1.65], gap="medium")
         with chat:
             with st.container(key="tt_chat_panel", border=True):
                 section_title("Evaluación guiada", "bot")
-                pagina = st.session_state.get("navegacion", "ANALISIS")
-                if pagina == "EXPEDIENTE":
-                    st.dataframe(resumen(c), hide_index=True, use_container_width=True)
-                elif pagina == "HISTORIAL":
-                    st.caption("Cambios de esta sesión; no constituye auditoría bancaria.")
-                    if c.flujo.cambios:
-                        st.dataframe(c.flujo.cambios, hide_index=True)
-                    else:
-                        st.caption("Todavía no hay cambios registrados.")
-                elif pagina == "AYUDA":
-                    st.info("Comienza con un monto, plazo y TEA. Puedes responder varios datos juntos, preguntar por qué se solicitan o agregarlos después. Los documentos se procesan en el servidor, nunca en Gemini. El score externo no está integrado.")
+                st.caption(estado_asistente(st.session_state.ia, configuracion(st.secrets), permitido=ia_permitida(st.secrets)))
                 with st.expander(f"Etapas · {TITULOS[c.flujo.etapa]}", expanded=False):
                     st.markdown(steps_html(vm), unsafe_allow_html=True)
                     st.caption("El panel financiero muestra la revisión vigente; los mensajes anteriores conservan el contexto de su momento.")
@@ -369,8 +422,6 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                     with st.spinner("Revisando tu consulta…"):
                         enviar(texto, desde_chat=True)
                     st.rerun()
-                if st.session_state.ia.habilitado:
-                    st.caption("Gemini activo para consultas de demostración")
                 if c.pendiente:
                     st.info("Confirma la modificación o cancélala para conservar los datos.")
                     if st.button("Confirmar acción"):
@@ -390,7 +441,7 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                     opciones(c)
                     if c.flujo.etapa == "REVISION_DATOS" and not c.pendiente:
                         revisar(c)
-                if c.resultado and c.resultado.estado == "DISCREPANCIA PENDIENTE":
+                if st.session_state.get("mostrar_aclaracion") and c.resultado and c.resultado.estado == "DISCREPANCIA PENDIENTE":
                     with st.form("aclaracion_ingresos"):
                         st.caption("Hay diferencias entre ingreso declarado y documental. Elige la fuente y justifica la decisión.")
                         fuente = st.selectbox("Fuente elegida", ["PENDIENTE", "DECLARADO", "DOCUMENTAL"], format_func=lambda x: {"PENDIENTE":"Seleccionar", "DECLARADO":"Ingreso declarado", "DOCUMENTAL":"Promedio de boletas"}[x])
@@ -398,30 +449,35 @@ def mostrar(editor, reiniciar_ui, pedir_caso):
                         if st.form_submit_button("Registrar aclaración"):
                             try:
                                 aclarar_ingreso(c, fuente, nota)
+                                st.session_state.mostrar_aclaracion = False
                                 st.rerun()
                             except ValueError as error:
                                 st.warning(str(error))
-                panel_ia()
         with dashboard:
             with st.container(key="tt_dashboard_panel", border=True):
-                section_title("Resumen del análisis")
-                nombres = ["Resumen", "Alternativas", "Indicadores", "Gráficos", "Detalle", "Simular", "Informe e IA"]
+                section_title("Análisis del crédito")
+                nombres = ["Resumen", "Alternativas", "Indicadores", "Gráficos", "Detalle", "Simular", "Informe"]
                 pestanas = st.tabs(nombres, key="pestana_analisis", on_change=cambiar_pestana, args=(c,))
+                confirmado = c.flujo.etapa == "RESULTADOS" and not c.pendiente
                 for nombre, pestana in zip(nombres, pestanas):
-                    with pestana:
-                        # Acota también las tablas y formularios largos a su panel.
-                        with st.container(height=480, border=False, key="panel_" + nombre):
-                            if nombre in ("Resumen", "Indicadores", "Gráficos"):
-                                render_dashboard_area(vm, nombre)
-                            if nombre in ("Resumen", "Indicadores"):
-                                mostrar_riesgo(c, vm, detalle=nombre == "Indicadores")
-                            if c.flujo.etapa == "RESULTADOS" and not c.pendiente:
-                                if nombre == "Alternativas":
-                                    mostrar_alternativas(c)
-                                else:
-                                    resultados(c, nombre)
-                            elif nombre in ("Alternativas", "Detalle", "Simular", "Informe e IA"):
-                                st.info("Confirma los datos de la evaluación para habilitar esta sección.")
-    if c.vista == "ESTRATEGIA":
-        st.caption("Comparación tecnológica independiente de esta evaluación crediticia")
+                    with pestana, st.container(key="panel_" + nombre):
+                        if nombre in ("Resumen", "Indicadores", "Gráficos"):
+                            render_dashboard_area(vm, nombre)
+                        if nombre == "Indicadores" and vm.sentinel_url:
+                            st.markdown(sentinel_link_html(vm.sentinel_url), unsafe_allow_html=True)
+                        if nombre == "Detalle" and c.vista == "COSTOS" and not confirmado:
+                            boton("Volver al detalle del caso", "DETALLE")
+                            editor_costos(c)
+                        elif confirmado:
+                            if nombre == "Alternativas":
+                                mostrar_alternativas(c)
+                            else:
+                                resultados(c, nombre)
+                        elif nombre in ("Alternativas", "Detalle", "Simular", "Informe"):
+                            st.info("Completa y confirma los datos desde la evaluación guiada para habilitar esta sección.")
+                        elif nombre in ("Resumen", "Indicadores") and c.flujo.iniciado:
+                            if nombre == "Indicadores":
+                                mostrar_tcea(c.expediente, vm.resultado)
+                            mostrar_avisos(c, vm.resultado, resumen=nombre == "Resumen")
+    if c.vista == "ESTRATEGIA" and os.environ.get("TRIPLE_T_HERRAMIENTAS_DEV", "").lower() == "true":
         mostrar_estrategia()

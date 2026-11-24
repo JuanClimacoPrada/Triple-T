@@ -2,11 +2,13 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+import re
 from zoneinfo import ZoneInfo
 
 from conversacion.gestor import decir
 from dominio.modelos import VERSION_REGLAS
-from servicios.alternativas import CODIGOS, EscalaPuntuacion, PESOS, VERSION_PONDERACION, comparar, generar_alternativas
+from servicios.alternativas import (CODIGOS, EscalaPuntuacion, PESOS, VERSION_PONDERACION, comparar,
+                                    efectos_principales, generar_alternativas, interpretar_saldo)
 from servicios.documentos import texto_seguro
 
 @dataclass(frozen=True)
@@ -59,9 +61,12 @@ def editar(c, alternativa):
     if opciones == c.opciones_crediticias:
         return
     # Validar la matriz completa antes de sustituir la edición anterior.
-    comparar(c.expediente, opciones, c.config, escala_para(c))
+    nueva = comparar(c.expediente, opciones, c.config, escala_para(c))
     invalidar_comparativa(c)
     c.opciones_crediticias = opciones
+    _, _, c.clave_comparativa = _entrada(c)
+    c.comparativa_crediticia = nueva
+    c.alternativa_en_contexto = alternativa.codigo
     c.vista = "ALTERNATIVAS"
 
 
@@ -105,8 +110,9 @@ def guardar_seleccion(c, codigo, justificacion):
     if c.alternativa_propuesta != codigo:
         raise ValueError("Selecciona la alternativa vigente antes de confirmar.")
     justificacion = justificacion.strip()
-    if not 1 <= len(justificacion) <= 300:
-        raise ValueError("Escribe una justificación de 1 a 300 caracteres.")
+    palabras = {p for p in re.findall(r"[^\W\d_]+", justificacion.casefold()) if len(p) >= 3 and len(set(p)) > 1}
+    if not 1 <= len(justificacion) <= 300 or len(palabras) < 3:
+        raise ValueError("Explica el motivo de tu elección en una frase de hasta 300 caracteres. Incluye al menos tres palabras distintas sobre las condiciones o los resultados.")
     texto_seguro(justificacion)
     c.seleccion_alternativa = SeleccionAlternativa(
         codigo, datetime.now(ZoneInfo("America/Lima")), c.revision, evaluacion, justificacion,
@@ -143,7 +149,7 @@ def resumen_seguro(c):
         a = e.alternativa
         puntaje = "pendiente" if e.puntaje_global is None else f"{e.puntaje_global:.2f}/100"
         hechos[f"{a.codigo}_condiciones"] = f"Alternativa {a.codigo}: monto S/ {a.monto}, plazo {a.meses} meses, TEA supuesta {a.tea}%, puntuación académica {puntaje}."
-        hechos[f"{a.codigo}_consecuencias"] = " Alternativa " + a.codigo + ". " + " ".join(e.consecuencias)
+        hechos[f"{a.codigo}_consecuencias"] = describir_alternativa(comparativa, e)
         for s in e.escenarios:
             nombre = s.nombre.lower()
             cifras = s.resultado.cifras
@@ -156,7 +162,15 @@ def resumen_seguro(c):
                     valor = f"{v:.2%}" if k == "dti_total" else f"S/ {v:,.2f}"
                     metricas.append(f"{etiqueta} {valor}")
             hechos[f"{a.codigo}_{nombre}"] = f"{a.codigo} {nombre}, caída supuesta {s.caida}%: " + (", ".join(metricas) or "resultados pendientes")
+            hechos[f"{a.codigo}_{nombre}_lectura"] = f"Alternativa {a.codigo}, escenario {nombre}: {interpretar_saldo(s.resultado)}"
     return hechos
+
+
+def describir_alternativa(comparativa, evaluacion):
+    beneficio, desventaja = efectos_principales(evaluacion, comparativa.base)
+    saldo = interpretar_saldo(evaluacion.escenarios[1].resultado)
+    return (f"Alternativa {evaluacion.alternativa.codigo}. {beneficio} {desventaja} "
+            f"En el escenario esperado, {saldo[0].lower() + saldo[1:]}")
 
 
 def accion_semantica(c, intent, referencia, entities):
@@ -173,5 +187,5 @@ def accion_semantica(c, intent, referencia, entities):
         c.alternativa_en_contexto = codigo
     if intent == "EXPLICAR_CONSECUENCIAS":
         e = evaluacion_para(c, codigo)
-        return "\n\n".join(e.consecuencias)
+        return describir_alternativa(comparativa, e)
     return comparativa.recomendacion

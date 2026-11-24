@@ -20,23 +20,23 @@ def evaluar_escenario(expediente, monto, meses, tea, caida, config, base, *, con
     # La caída aplica al ingreso anterior a deuda; nunca a gastos/cuotas.
     ingreso_base = base.cifras.get("ingresos_admisibles")
     ingreso = None if ingreso_base is None else ingreso_base * (1 - caida / 100)
-    cargos_completos = expediente.cargos_completos
+    origen_fechas = expediente.origen_fechas_pago
     if conservar_calendario and meses == expediente.meses:
         fechas = expediente.fechas_pago
-    elif expediente.fecha_desembolso and expediente.fechas_pago:
+    elif expediente.fecha_desembolso and expediente.fechas_pago and (not conservar_calendario or base.tcea is not None):
         fechas = fechas_mensuales(expediente.fecha_desembolso, meses)
-        if conservar_calendario:
-            cargos_completos = cargos_completos and base.tcea is not None
+        origen_fechas = "PROYECTADAS" if expediente.origen_fechas_pago != "PROPUESTAS" else "PROPUESTAS"
     else:
         fechas = ()
+        origen_fechas = None
     copia = replace(expediente, monto=monto, meses=meses, tea=tea,
-                    fechas_pago=fechas, cargos_completos=cargos_completos)
+                    fechas_pago=fechas, origen_fechas_pago=origen_fechas)
     resultado = analizar(copia, config, ingreso_escenario=ingreso)
     if ingreso_base is None:
         resultado.supuestos.append("Escenario de ingresos pendiente: falta ingreso admisible base.")
     else:
         resultado.supuestos.append(f"Escenario: caída {caida}% sobre ingreso admisible base {ingreso_base}; gastos y deudas constantes.")
-    if conservar_calendario and meses != expediente.meses and fechas:
+    if origen_fechas == "PROYECTADAS":
         resultado.supuestos.append("Vencimientos proyectados mensualmente desde la fecha de desembolso del caso base; cargos mantenidos como supuesto.")
     resultado.meses_ingreso = base.meses_ingreso.copy()
     return copia, resultado

@@ -1,5 +1,9 @@
 # Triple-T — asistente académico de análisis crediticio
 
+El espacio de análisis reúne indicadores, acciones para resolver pendientes y
+acceso al detalle de cada alternativa. La guía del analista describe costos,
+TCEA, elección, PDF y configuración del asistente. [Flujo de trabajo y validación](docs/FLUJO_ANALISTA.md).
+
 ## Alternativas de un mismo crédito
 
 La pestaña **Alternativas** calcula tres condiciones de préstamo bajo tres
@@ -9,23 +13,17 @@ ponderada. La elección del analista y su justificación se incorporan al PDF.
 
 ## Riesgo hipotético y Sentinel
 
-«Evaluación del riesgo crediticio» separa capacidad financiera de los supuestos
-de PD. En Indicadores se editan tres escenarios sin cifras precargadas, horizonte
-explícito, complemento 100% − PD y pérdida ilustrativa con LGD y exposición.
-No existe modelo predictivo validado. El score externo permanece no disponible;
-un score manual solo puede registrarse como simulado, con fuente y fecha.
-El enlace `SENTINEL_URL` abre el portal oficial sin datos del expediente.
+Los ejercicios de PD y el score simulado viven en el espacio local **Desarrollo**,
+habilitado mediante `TRIPLE_T_HERRAMIENTAS_DEV=true`. Indicadores reúne las
+cifras del expediente y un enlace configurable al portal de Sentinel.
+`SENTINEL_URL` abre el portal oficial sin datos del expediente.
 Consulta [alcance, contratos futuros y validación](docs/RIESGO_HIPOTETICO.md).
 
 ## Diseño profesional integrado
 
 Navegación lateral, chat guiado y panel financiero progresivo inspirado en el flyer.
-Los indicadores y gráficos utilizan el motor existente. La tarjeta «Score crediticio»
-muestra «No disponible» y permite configurar un enlace externo mediante
-`SENTINEL_URL`, sin transmitir el expediente. Consulta [integración y pendientes](docs/UI_PRO.md).
-El diseño inicial se entregó sin pruebas por instrucción del responsable. La mejora
-de riesgo incluye la actualización y ejecución de las pruebas autorizadas;
-la validación visual completa y capturas siguen pendientes.
+Los indicadores y gráficos utilizan el motor existente. La navegación actual
+agrupa la captura, el expediente, el historial y la configuración. [Evolución inicial del diseño](docs/UI_PRO.md).
 
 ## Sprint 5 — evaluación guiada, documentos y resumen visual
 
@@ -35,8 +33,8 @@ revisar fuentes y confirmar antes de calcular. Las tarjetas muestran cuota, DTI,
 disponible y estado de revisión. Escenarios, gráficos, cronograma y PDF reutilizan
 el motor Python. Solo crédito personal en PEN.
 
-**Toda la captura y el procesamiento documental funcionan sin Gemini.** Desde
-el chat se puede activar Gemini para interpretar consultas de demostración
+**Toda la captura y el procesamiento documental funcionan sin Gemini.** En
+Configuración se puede consentir el uso de Gemini para interpretar consultas de demostración
 durante la captura y el análisis. Python valida entidades, calcula los
 indicadores y pide confirmación para aplicar cambios propuestos.
 
@@ -65,15 +63,13 @@ disponible siempre.
    Define `GEMINI_API_KEY`, `GEMINI_MODEL` y `GEMINI_FREE_TIER_CONFIRMED = true`
    únicamente tras verificar acceso gratuito. También se admiten variables de entorno.
    No compartas la clave en chat, GitHub, capturas ni informes.
-4. Abre «Gemini opcional» en el chat, lee el aviso, consiente y activa Gemini.
-   «Seguir sin IA» vuelve al flujo local. Al reiniciar un caso se solicita el
-   consentimiento de nuevo.
-   Configuración disponible no significa conexión probada: el panel indica si Gemini
-   ya respondió en la sesión y muestra un motivo seguro cuando falla.
+4. Abre **Configuración → Asistente conversacional**, lee el aviso y marca el
+   consentimiento. Retira esa marca para volver al asistente local. El permiso
+   queda vigente durante la sesión, incluso al iniciar otro expediente.
 
-El chat presenta las herramientas a medida que hacen falta: escribe «subir boletas»,
-«ver gráfico» o «genera PDF». El expediente, edición manual, costos y casos ficticios
-están en la barra lateral, cerrada al comenzar. [Cambios de interfaz y comprobaciones pendientes](docs/CHAT_CONTEXTUAL.md).
+El chat presenta herramientas según la etapa. Usa **Expediente** para editar
+datos, registrar evidencias y ajustar costos. En el panel de análisis puedes
+consultar gráficos, simular cambios y descargar el informe.
 
 El nivel gratuito puede usar el contenido enviado para mejorar productos.
 No se transmiten documentos ni OCR; el detector de identificadores es conservador

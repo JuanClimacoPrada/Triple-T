@@ -87,6 +87,11 @@ Formula una explicación específica, breve y profesional. Usa hechos existentes
 como marcadores {{id}} y cita los mismos IDs en hechos. Los marcadores incluyen
 la etiqueta y el valor y se reemplazan en el servidor. Para cifras o diferencias
 del caso usa exclusivamente los hechos del contexto; no los copies ni derives.
+Si pregunta si le alcanza o cuánto le sobra, usa el hecho de lectura del saldo.
+Si pregunta qué parte del sueldo se destina a deudas, usa la lectura del DTI.
+Para conveniencia de una opción, cita consecuencias y recomendación. Para una
+caída del sueldo, explica la lectura del escenario que corresponda, distinguiendo
+sus supuestos de los datos confirmados. No acumules hechos que no aporten a la pregunta.
 No escribas números, porcentajes, dinero ni comparaciones financieras en el texto
 libre. Puedes explicar conceptos en tus palabras y conectar hechos calculados.
 Una respuesta sobre resultados, comparación o consecuencias exige al menos un

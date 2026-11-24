@@ -55,7 +55,10 @@ def generar_pdf(expediente, resultado, escenarios=(), config=None, *, alternativ
     titulo("Cargos supuestos y fechas de flujo")
     tabla([["Concepto", "Importe", "Momento", "Pagador"]] +
           [[c.concepto, formato(c.importe), c.momento, c.pagador] for c in expediente.cargos], [180, 90, 100, 140])
-    story.append(p("Fechas de pago: " + (", ".join(map(str, expediente.fechas_pago)) or "Pendientes")))
+    estado_calendario = {"PROPUESTAS": "propuestas, por confirmar", "CONFIRMADAS": "confirmadas en la sesión",
+                         "PROYECTADAS": "proyectadas para la simulación"}.get(expediente.origen_fechas_pago, "registradas")
+    fechas = ", ".join(map(str, expediente.fechas_pago))
+    story.append(p(f"Fechas de pago ({estado_calendario}): {fechas}" if fechas else "Fechas de pago pendientes."))
     titulo("Evidencias: confirmación no equivale a autenticidad")
     for e in expediente.evidencias:
         story.append(p(f"{e.documento_id} | {e.nombre_archivo_sanitizado} | {e.pagina_o_region} | {e.fecha_documento}"))
