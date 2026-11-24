@@ -23,9 +23,10 @@ from ui_chat import editor_costos, editor_anotaciones
 from servicios.costos import diagnostico_tcea
 from servicios.alternativas import interpretar_saldo
 from experiencia.comparador import obtener
+from experiencia.sugerencia import sugerencia_comparativa
 from visualizaciones import mostrar_graficos
 from triple_t_pro_layout import (construir_vm, sentinel_config, load_styles, hero_html,
-    message_html, steps_html, section_title, render_dashboard_area, sentinel_link_html)
+    message_html, steps_html, section_title, render_dashboard_area, sentinel_link_html, sugerencia_html)
 
 TAB_POR_VISTA = {"ALTERNATIVAS": "Alternativas", "SIMULAR": "Simular", "DETALLE": "Detalle",
                  "GRAFICO": "Gráficos", "PDF": "Informe e IA", "COSTOS": "Detalle"}
@@ -314,6 +315,11 @@ def resultados(c, seccion):
         return
     if seccion == "Resumen":
         st.write(interpretar_saldo(r))
+        try:
+            sugerencia = sugerencia_comparativa(obtener(c))
+        except ValueError:
+            sugerencia = "Causa, primero revisaría las condiciones del caso original para poder comparar las opciones."
+        st.markdown(sugerencia_html(sugerencia), unsafe_allow_html=True)
         boton("Ver alternativas", "ALTERNATIVAS", type="primary", icon=":material/compare_arrows:")
         if avisos_evaluacion(c, r):
             boton("Consultar alertas en Indicadores", "INDICADORES")

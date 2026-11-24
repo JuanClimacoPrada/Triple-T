@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal as D
 
 from dominio.modelos import Cargo, Configuracion, Evidencia, Expediente
+from experiencia.sugerencia import sugerencia_comparativa
 from servicios.alternativas import EscalaPuntuacion, PESOS, comparar, generar_alternativas
 from servicios.finanzas import cronograma, fechas_mensuales
 
@@ -22,6 +23,23 @@ def boletas(importes, meses=(1, 2, 3)):
 
 
 class TestAlternativas(unittest.TestCase):
+    def test_sugerencia_explicita_cuando_tomaria_una_opcion(self):
+        exp = caso(ingreso=D(10000), evidencias=boletas((10000, 10000, 10000)))
+        resultado = comparar(exp, generar_alternativas(exp))
+        opcion, = resultado.recomendadas
+        mensaje = sugerencia_comparativa(resultado)
+        self.assertIn(f"yo tomaría la opción {opcion}", mensaje)
+        self.assertIn("Resiste los tres escenarios", mensaje)
+
+    def test_sugerencia_advierte_si_ninguna_opcion_resiste(self):
+        exp = caso()
+        resultado = comparar(exp, generar_alternativas(exp))
+        mensaje = sugerencia_comparativa(resultado)
+        self.assertIn("miraría primero la opción", mensaje)
+        self.assertIn("Yo esperaría antes de elegir", mensaje)
+        self.assertIn("caída de ingresos del 30%", mensaje)
+        self.assertNotIn("yo tomaría", mensaje)
+
     def test_matriz_reutiliza_calculo_financiero_y_compara_con_base(self):
         exp = caso()
         alternativas = generar_alternativas(exp)

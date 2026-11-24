@@ -16,15 +16,26 @@ puntuación de la aplicación procede del expediente y del motor local.
 
 ## Uso habitual
 
-Confirma el expediente en la evaluación guiada. En **Resumen**, revisa las
-cifras y pulsa **Ver alternativas**. En el catálogo, pulsa **Analizar alternativa** en la tarjeta que quieres inspeccionar.
+En **Resumen**, verifica los datos de la solicitud, incluido el ingreso declarado,
+el monto, la TEA y el plazo. Al confirmar el expediente, aparecen los resultados y
+la sugerencia de Triple-T. La sugerencia se genera localmente con los escenarios
+calculados. Explica qué opción revisaría primero, qué se gana y qué se tendría que
+revisar antes de elegir. Si falta información o ninguna opción deja margen,
+propone revisar los datos o las condiciones.
+
+Pulsa **Ver alternativas**. En el catálogo, pulsa **Analizar alternativa** en la
+tarjeta que quieres inspeccionar. Las etiquetas de saldo y DTI muestran por separado
+el margen mensual y el cumplimiento del umbral académico, junto al puntaje y el
+conteo de escenarios que cumplen los dos criterios.
 En el detalle, revisa cómo cambia el saldo con la caída de ingresos, el costo
 frente a la solicitud original y el índice ponderado. Para comparar las nueve
 filas, vuelve al catálogo y abre la matriz general. Selecciona una alternativa
 en su detalle, registra el motivo y prepara el PDF en **Informe e IA**.
 
 En **Indicadores**, los avisos muestran qué dato impide el cálculo y el acceso
-para resolverlo. En costos, deja en blanco un importe desconocido, o registra
+para resolverlo. Con ingreso admisible de S/ 0, el DTI se marca explícitamente
+como «No calculable». El margen DTI negativo queda en rojo y con signo. En
+costos, deja en blanco un importe desconocido, o registra
 S/ 0 para un cargo que confirmaste que no aplica. Puedes confirmar el calendario
 mostrado o registrar los vencimientos efectivos. Los plazos alternativos pueden
 usar calendarios proyectados rotulados como tales. Una TCEA queda pendiente
@@ -60,7 +71,8 @@ entorno. [Salidas estructuradas de Gemini](https://ai.google.dev/gemini-api/docs
 
 ## Verificación local
 
-- 121 pruebas satisfactorias con `python -m unittest discover -s tests -v`.
+- 123 pruebas satisfactorias con `python -m unittest discover -s tests -v`,
+  incluidos los casos de déficit, ingreso cero y sugerencias con y sin alternativa robusta.
 - Pruebas de Gemini con proveedor simulado, incluidos el saludo local, la
   interpretación por intención, errores HTTP, timeout y diagnóstico sin secretos.
 - Prueba integrada de selección, rechazo de una justificación trivial,
